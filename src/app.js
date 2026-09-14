@@ -3,15 +3,18 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
 const { requestContextMiddleware, errorHandlerMiddleware } = require('./middleware/requestContext');
 const authRoutes = require('./routes/authRoutes');
 const apiRoutes = require('./routes/apiRoutes');
 
 const app = express();
 
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 
 const allowedOrigins = [
   'http://localhost:5173',
@@ -31,7 +34,7 @@ app.use(
       if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
         return callback(null, true);
       }
-      return callback(null, true);
+      return callback(new Error(`Origin '${origin}' not allowed by CORS policy.`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -52,8 +55,30 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// Health Check
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', service: 'School Management ERP MongoDB API', timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: 'UP',
+    service: 'School Management ERP MongoDB API',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness Check (Section 47)
+app.get('/ready', (req, res) => {
+  const isMongoConnected = mongoose.connection.readyState === 1;
+  if (isMongoConnected) {
+    return res.status(200).json({
+      status: 'READY',
+      database: 'CONNECTED',
+      timestamp: new Date().toISOString(),
+    });
+  }
+  return res.status(503).json({
+    status: 'NOT_READY',
+    database: 'DISCONNECTED',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 const apiPrefix = process.env.API_PREFIX || '/api/v1';

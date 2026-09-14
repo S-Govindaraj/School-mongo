@@ -1,10 +1,20 @@
 const Grade = require('../models/Grade');
+const Section = require('../models/Section');
+const ClassSubject = require('../models/ClassSubject');
+const TeacherAssignment = require('../models/TeacherAssignment');
 const { successResponse } = require('../utils/response');
+const { NotFoundError, ValidationError } = require('../utils/errors');
+const { logAuditEvent } = require('../middleware/auditLogger');
 
 const getGrades = async (req, res, next) => {
   try {
-    const grades = await Grade.find({}).sort({ sequenceOrder: 1, name: 1 });
-    return successResponse(res, grades, 'Grades retrieved');
+    const schoolId = req.schoolContext?.schoolId;
+    const grades = await Grade.find({
+      schoolId,
+      status: { $ne: 'ARCHIVED' },
+    }).sort({ sequenceOrder: 1, name: 1 });
+
+    return successResponse(res, grades, 'Grades retrieved successfully');
   } catch (error) {
     next(error);
   }
@@ -12,8 +22,49 @@ const getGrades = async (req, res, next) => {
 
 const createGrade = async (req, res, next) => {
   try {
-    const grade = await Grade.create(req.body);
-    return successResponse(res, grade, 'Grade created', 201);
+    const schoolId = req.schoolContext?.schoolId;
+    const { name, code, category = 'Primary', sequenceOrder = 1 } = req.body;
+
+    const formattedCode = code.trim().toUpperCase();
+
+    const existing = await Grade.findOne({ schoolId, code: formattedCode });
+    if (existing && existing.status !== 'ARCHIVED') {
+      throw new ValidationError(`Grade code '${formattedCode}' already exists in this school.`);
+    }
+
+    let grade;
+    if (existing && existing.status === 'ARCHIVED') {
+      existing.name = name;
+      existing.category = category;
+      existing.sequenceOrder = Number(sequenceOrder);
+      existing.status = 'ACTIVE';
+      grade = await existing.save();
+    } else {
+      grade = await Grade.create({
+        schoolId,
+        name,
+        code: formattedCode,
+        category,
+        sequenceOrder: Number(sequenceOrder),
+        status: 'ACTIVE',
+      });
+    }
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'CREATE',
+      entity: 'Grade',
+      entityId: grade._id.toString(),
+      newValues: grade.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, grade, 'Grade created successfully', 201);
   } catch (error) {
     next(error);
   }
@@ -21,8 +72,34 @@ const createGrade = async (req, res, next) => {
 
 const updateGrade = async (req, res, next) => {
   try {
-    const grade = await Grade.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    return successResponse(res, grade, 'Grade updated');
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const grade = await Grade.findOne({ _id: id, schoolId });
+    if (!grade) {
+      throw new NotFoundError('Grade not found.');
+    }
+
+    const oldValues = grade.toObject();
+    Object.assign(grade, req.body);
+    await grade.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'UPDATE',
+      entity: 'Grade',
+      entityId: grade._id.toString(),
+      oldValues,
+      newValues: grade.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, grade, 'Grade updated successfully');
   } catch (error) {
     next(error);
   }
@@ -30,8 +107,55 @@ const updateGrade = async (req, res, next) => {
 
 const deleteGrade = async (req, res, next) => {
   try {
-    await Grade.findByIdAndDelete(req.params.id);
-    return successResponse(res, null, 'Grade deleted');
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const grade = await Grade.findOne({ _id: id, schoolId });
+    if (!grade) {
+      throw new NotFoundError('Grade not found.');
+    }
+
+    const hasSections = await Section.countDocuments({ schoolId, gradeId: id, status: { $ne: 'ARCHIVED' } });
+    const hasClassSubjects = await ClassSubject.countDocuments({ schoolId, gradeId: id, status: { $ne: 'ARCHIVED' } });
+    const hasTeacherAssignments = await TeacherAssignment.countDocuments({ schoolId, gradeId: id, status: { $ne: 'ARCHIVED' } });
+
+    if (hasSections > 0 || hasClassSubjects > 0 || hasTeacherAssignments > 0) {
+      grade.status = 'ARCHIVED';
+      await grade.save();
+
+      await logAuditEvent({
+        schoolId,
+        actorId: req.user._id,
+        actorName: req.user.name,
+        actorEmail: req.user.email,
+        action: 'ARCHIVE',
+        entity: 'Grade',
+        entityId: grade._id.toString(),
+        reason: 'Referenced by sections or class subjects - archived for data integrity',
+        requestId: req.requestId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      return successResponse(res, null, 'Grade archived successfully (referenced by sections/class subjects)');
+    }
+
+    await Grade.deleteOne({ _id: id, schoolId });
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'DELETE',
+      entity: 'Grade',
+      entityId: id,
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, null, 'Grade deleted successfully');
   } catch (error) {
     next(error);
   }

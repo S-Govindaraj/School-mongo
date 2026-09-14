@@ -1,11 +1,23 @@
 const Staff = require('../models/Staff');
 const User = require('../models/User');
+const Role = require('../models/Role');
+const TeacherAssignment = require('../models/TeacherAssignment');
 const { successResponse } = require('../utils/response');
+const { NotFoundError, ValidationError } = require('../utils/errors');
+const { logAuditEvent } = require('../middleware/auditLogger');
+const bcrypt = require('bcryptjs');
 
 const getStaff = async (req, res, next) => {
   try {
-    const staff = await Staff.find({}).populate('userId');
-    return successResponse(res, staff, 'Staff members retrieved');
+    const schoolId = req.schoolContext?.schoolId;
+    const staff = await Staff.find({
+      schoolId,
+      status: { $ne: 'ARCHIVED' },
+    })
+      .populate('userId')
+      .sort({ createdAt: -1 });
+
+    return successResponse(res, staff, 'Staff members retrieved successfully');
   } catch (error) {
     next(error);
   }
@@ -13,8 +25,88 @@ const getStaff = async (req, res, next) => {
 
 const createStaff = async (req, res, next) => {
   try {
-    const staff = await Staff.create(req.body);
-    return successResponse(res, staff, 'Staff created', 201);
+    const schoolId = req.schoolContext?.schoolId;
+    const {
+      employeeId,
+      name,
+      firstName,
+      lastName,
+      email,
+      phone,
+      designation,
+      department = '',
+      qualification = '',
+      experienceYears = 0,
+      joiningDate,
+      employmentStatus = 'TEACHING',
+    } = req.body;
+
+    const formattedEmpId = employeeId.trim().toUpperCase();
+
+    const existing = await Staff.findOne({ schoolId, employeeId: formattedEmpId });
+    if (existing && existing.status !== 'ARCHIVED') {
+      throw new ValidationError(`Employee ID '${formattedEmpId}' already exists in this school.`);
+    }
+
+    const fullName = name || `${firstName || ''} ${lastName || ''}`.trim() || `Staff ${formattedEmpId}`;
+    const staffEmail = (email || `${formattedEmpId.toLowerCase()}@school.internal`).toLowerCase().trim();
+
+    // Check if user profile exists or create standard user account
+    let user = await User.findOne({ email: staffEmail });
+    if (!user) {
+      const defaultRole = await Role.findOne({ code: 'TEACHER' }) || await Role.findOne({ code: 'STAFF' });
+      const hashedPassword = await bcrypt.hash('password123', 10);
+      user = await User.create({
+        schoolId,
+        roleId: defaultRole?._id,
+        email: staffEmail,
+        password: hashedPassword,
+        name: fullName,
+        phone: phone || '',
+        status: 'ACTIVE',
+      });
+    }
+
+    let staff;
+    if (existing && existing.status === 'ARCHIVED') {
+      existing.designation = designation;
+      existing.department = department;
+      existing.qualification = qualification;
+      existing.experienceYears = Number(experienceYears);
+      existing.userId = user._id;
+      existing.status = 'ACTIVE';
+      staff = await existing.save();
+    } else {
+      staff = await Staff.create({
+        schoolId,
+        userId: user._id,
+        employeeId: formattedEmpId,
+        designation,
+        department,
+        qualification,
+        experienceYears: Number(experienceYears),
+        joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
+        status: 'ACTIVE',
+      });
+    }
+
+    const populatedStaff = await Staff.findById(staff._id).populate('userId');
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'CREATE',
+      entity: 'Staff',
+      entityId: staff._id.toString(),
+      newValues: staff.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, populatedStaff, 'Staff member created successfully', 201);
   } catch (error) {
     next(error);
   }
@@ -22,8 +114,40 @@ const createStaff = async (req, res, next) => {
 
 const updateStaff = async (req, res, next) => {
   try {
-    const staff = await Staff.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    return successResponse(res, staff, 'Staff updated');
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const staff = await Staff.findOne({ _id: id, schoolId });
+    if (!staff) {
+      throw new NotFoundError('Staff member not found.');
+    }
+
+    const oldValues = staff.toObject();
+    Object.assign(staff, req.body);
+    await staff.save();
+
+    if (staff.userId && req.body.name) {
+      await User.findByIdAndUpdate(staff.userId, { name: req.body.name, phone: req.body.phone });
+    }
+
+    const updated = await Staff.findById(id).populate('userId');
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'UPDATE',
+      entity: 'Staff',
+      entityId: staff._id.toString(),
+      oldValues,
+      newValues: staff.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, updated, 'Staff member updated successfully');
   } catch (error) {
     next(error);
   }
@@ -31,8 +155,53 @@ const updateStaff = async (req, res, next) => {
 
 const deleteStaff = async (req, res, next) => {
   try {
-    await Staff.findByIdAndDelete(req.params.id);
-    return successResponse(res, null, 'Staff deleted');
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const staff = await Staff.findOne({ _id: id, schoolId });
+    if (!staff) {
+      throw new NotFoundError('Staff member not found.');
+    }
+
+    const hasAssignments = await TeacherAssignment.countDocuments({ schoolId, staffId: id, status: { $ne: 'ARCHIVED' } });
+
+    if (hasAssignments > 0) {
+      staff.status = 'ARCHIVED';
+      await staff.save();
+
+      await logAuditEvent({
+        schoolId,
+        actorId: req.user._id,
+        actorName: req.user.name,
+        actorEmail: req.user.email,
+        action: 'ARCHIVE',
+        entity: 'Staff',
+        entityId: staff._id.toString(),
+        reason: 'Referenced by active teacher assignments - archived for data preservation',
+        requestId: req.requestId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      return successResponse(res, null, 'Staff member archived (referenced by active teacher assignments)');
+    }
+
+    await Staff.deleteOne({ _id: id, schoolId });
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'DELETE',
+      entity: 'Staff',
+      entityId: id,
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, null, 'Staff member deleted successfully');
   } catch (error) {
     next(error);
   }

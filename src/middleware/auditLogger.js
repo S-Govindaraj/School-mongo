@@ -1,6 +1,25 @@
 const AuditLog = require('../models/AuditLog');
 const logger = require('../config/logger');
 
+const SENSITIVE_KEYS = ['password', 'token', 'access_token', 'refresh_token', 'authorization', 'cookie', 'otp', 'card', 'cvv'];
+
+const redactSensitiveData = (data) => {
+  if (!data || typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(redactSensitiveData);
+
+  const sanitized = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (SENSITIVE_KEYS.some((k) => key.toLowerCase().includes(k))) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = redactSensitiveData(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+};
+
 const logAuditEvent = async ({
   schoolId = null,
   actorId = null,
@@ -9,6 +28,10 @@ const logAuditEvent = async ({
   action,
   entity,
   entityId = '',
+  oldValues = null,
+  newValues = null,
+  reason = '',
+  requestId = '',
   details = {},
   ipAddress = '',
   userAgent = '',
@@ -22,7 +45,11 @@ const logAuditEvent = async ({
       action,
       entity,
       entityId,
-      details,
+      oldValues: redactSensitiveData(oldValues),
+      newValues: redactSensitiveData(newValues),
+      reason,
+      requestId,
+      details: redactSensitiveData(details),
       ipAddress,
       userAgent,
     });
@@ -33,4 +60,5 @@ const logAuditEvent = async ({
 
 module.exports = {
   logAuditEvent,
+  redactSensitiveData,
 };

@@ -6,6 +6,7 @@ const School = require('../models/School');
 const { successResponse } = require('../utils/response');
 const { AuthenticationError, ValidationError, NotFoundError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { getJwtSecret } = require('../middleware/auth');
 
 /**
  * User Login
@@ -38,7 +39,7 @@ const login = async (req, res, next) => {
     // Generate JWT Token
     const token = jwt.sign(
       { userId: user._id, email: user.email, roleId: user.roleId?._id || user.roleId },
-      process.env.JWT_SECRET || 'fallback_secret_key',
+      getJwtSecret(),
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
@@ -65,6 +66,7 @@ const login = async (req, res, next) => {
       entity: 'User',
       entityId: user._id.toString(),
       details: { email: user.email },
+      requestId: req.requestId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -111,6 +113,7 @@ const logout = async (req, res, next) => {
         action: 'LOGOUT',
         entity: 'User',
         entityId: req.user._id.toString(),
+        requestId: req.requestId,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
@@ -190,6 +193,7 @@ const changePassword = async (req, res, next) => {
       action: 'CHANGE_PASSWORD',
       entity: 'User',
       entityId: user._id.toString(),
+      requestId: req.requestId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

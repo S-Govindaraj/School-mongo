@@ -1,21 +1,27 @@
 const Role = require('../models/Role');
 const User = require('../models/User');
 const Permission = require('../models/Permission');
-const { successResponse, errorResponse } = require('../utils/response');
+const { successResponse } = require('../utils/response');
+const { NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
+const { logAuditEvent } = require('../middleware/auditLogger');
 
-/**
- * Get all Roles with single payload format (KPI + Records + 50-item Pagination)
- */
 const getRoles = async (req, res, next) => {
   try {
+    const schoolId = req.schoolContext?.schoolId;
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 50;
     const search = (req.query.search || '').trim().toLowerCase();
 
-    const roles = await Role.find({}).sort({ hierarchyLevel: 1 });
+    // Retrieve system roles + school roles
+    const query = {
+      $or: [{ isSystem: true }, { schoolId }],
+      status: { $ne: 'ARCHIVED' },
+    };
 
-    // Compute user counts per role
+    const roles = await Role.find(query).sort({ hierarchyLevel: 1 });
+
     const userCounts = await User.aggregate([
+      { $match: { schoolId } },
       { $group: { _id: '$roleId', count: { $sum: 1 } } },
     ]);
     const userCountMap = {};
@@ -56,121 +62,160 @@ const getRoles = async (req, res, next) => {
     const totalPages = Math.max(1, Math.ceil(totalRecords / limit));
     const paginatedRecords = filtered.slice((page - 1) * limit, page * limit);
 
-    return successResponse(res, {
-      kpi: {
-        total,
-        system,
-        custom,
-        active,
+    return successResponse(
+      res,
+      {
+        kpi: {
+          total,
+          system,
+          custom,
+          active,
+        },
+        records: paginatedRecords,
+        pagination: {
+          total: totalRecords,
+          page,
+          limit,
+          totalPages,
+        },
       },
-      records: paginatedRecords,
-      pagination: {
-        total: totalRecords,
-        page,
-        limit,
-        totalPages,
-      },
-    }, 'Roles retrieved successfully');
+      'Roles retrieved successfully'
+    );
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get single role by ID
- */
 const getRoleById = async (req, res, next) => {
   try {
+    const schoolId = req.schoolContext?.schoolId;
     const { id } = req.params;
-    const role = await Role.findById(id);
+
+    const role = await Role.findOne({
+      _id: id,
+      $or: [{ isSystem: true }, { schoolId }],
+    });
 
     if (!role) {
-      return errorResponse(res, 'Role not found', 404, 'NOT_FOUND');
+      throw new NotFoundError('Role not found.');
     }
 
-    const userCount = await User.countDocuments({ roleId: role._id });
+    const userCount = await User.countDocuments({ roleId: role._id, schoolId });
 
-    const formattedRole = {
-      id: role._id,
-      name: role.name,
-      code: role.code,
-      description: role.description || '',
-      hierarchyLevel: role.hierarchyLevel,
-      isSystem: role.isSystem,
-      status: role.status,
-      isActive: role.status === 'ACTIVE',
-      userCount,
-      permissions: role.permissions || [],
-      createdAt: role.createdAt,
-      updatedAt: role.updatedAt,
-    };
-
-    return successResponse(res, formattedRole, 'Role details retrieved');
+    return successResponse(
+      res,
+      {
+        id: role._id,
+        name: role.name,
+        code: role.code,
+        description: role.description || '',
+        hierarchyLevel: role.hierarchyLevel,
+        isSystem: role.isSystem,
+        status: role.status,
+        isActive: role.status === 'ACTIVE',
+        userCount,
+        permissions: role.permissions || [],
+        createdAt: role.createdAt,
+        updatedAt: role.updatedAt,
+      },
+      'Role details retrieved'
+    );
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Create a new Role
- */
 const createRole = async (req, res, next) => {
   try {
-    const { name, code, description, hierarchyLevel = 5, permissions = [] } = req.body;
-
-    if (!name || !code) {
-      return errorResponse(res, 'Role name and code are required', 400, 'VALIDATION_ERROR');
-    }
+    const schoolId = req.schoolContext?.schoolId;
+    const { name, code, description = '', hierarchyLevel = 5, permissions = [] } = req.body;
 
     const formattedCode = code.trim().toUpperCase().replace(/\s+/g, '_');
 
-    const existing = await Role.findOne({ code: formattedCode });
-    if (existing) {
-      return errorResponse(res, `Role code '${formattedCode}' already exists`, 400, 'DUPLICATE_CODE');
-    }
-
-    const newRole = await Role.create({
-      name,
+    const existing = await Role.findOne({
       code: formattedCode,
-      description: description || '',
-      hierarchyLevel: Number(hierarchyLevel) || 5,
-      schoolId: req.user?.schoolId || null,
-      permissions: Array.isArray(permissions) ? permissions : [],
+      $or: [{ isSystem: true }, { schoolId }],
     });
 
-    const result = {
-      id: newRole._id,
-      name: newRole.name,
-      code: newRole.code,
-      description: newRole.description || '',
-      hierarchyLevel: newRole.hierarchyLevel,
-      isSystem: newRole.isSystem,
-      status: newRole.status,
-      isActive: newRole.status === 'ACTIVE',
-      userCount: 0,
-      permissions: newRole.permissions || [],
-      createdAt: newRole.createdAt,
-      updatedAt: newRole.updatedAt,
-    };
+    if (existing && existing.status !== 'ARCHIVED') {
+      throw new ValidationError(`Role code '${formattedCode}' already exists.`);
+    }
 
-    return successResponse(res, result, 'Role created successfully', 201);
+    let newRole;
+    if (existing && existing.status === 'ARCHIVED') {
+      existing.name = name;
+      existing.description = description;
+      existing.hierarchyLevel = Number(hierarchyLevel);
+      existing.permissions = Array.isArray(permissions) ? permissions : [];
+      existing.status = 'ACTIVE';
+      newRole = await existing.save();
+    } else {
+      newRole = await Role.create({
+        schoolId,
+        name,
+        code: formattedCode,
+        description,
+        hierarchyLevel: Number(hierarchyLevel),
+        isSystem: false,
+        status: 'ACTIVE',
+        permissions: Array.isArray(permissions) ? permissions : [],
+      });
+    }
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'CREATE',
+      entity: 'Role',
+      entityId: newRole._id.toString(),
+      newValues: newRole.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(
+      res,
+      {
+        id: newRole._id,
+        name: newRole.name,
+        code: newRole.code,
+        description: newRole.description || '',
+        hierarchyLevel: newRole.hierarchyLevel,
+        isSystem: newRole.isSystem,
+        status: newRole.status,
+        isActive: newRole.status === 'ACTIVE',
+        userCount: 0,
+        permissions: newRole.permissions || [],
+        createdAt: newRole.createdAt,
+        updatedAt: newRole.updatedAt,
+      },
+      'Role created successfully',
+      201
+    );
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Update an existing Role
- */
 const updateRole = async (req, res, next) => {
   try {
+    const schoolId = req.schoolContext?.schoolId;
     const { id } = req.params;
     const { name, description, hierarchyLevel, status, permissions } = req.body;
 
-    const existingRole = await Role.findById(id);
+    const existingRole = await Role.findOne({
+      _id: id,
+      $or: [{ isSystem: true }, { schoolId }],
+    });
+
     if (!existingRole) {
-      return errorResponse(res, 'Role not found', 404, 'NOT_FOUND');
+      throw new NotFoundError('Role not found.');
     }
+
+    const oldValues = existingRole.toObject();
 
     if (name !== undefined) existingRole.name = name;
     if (description !== undefined) existingRole.description = description;
@@ -180,42 +225,75 @@ const updateRole = async (req, res, next) => {
 
     await existingRole.save();
 
-    const userCount = await User.countDocuments({ roleId: existingRole._id });
+    const userCount = await User.countDocuments({ roleId: existingRole._id, schoolId });
 
-    const result = {
-      id: existingRole._id,
-      name: existingRole.name,
-      code: existingRole.code,
-      description: existingRole.description || '',
-      hierarchyLevel: existingRole.hierarchyLevel,
-      isSystem: existingRole.isSystem,
-      status: existingRole.status,
-      isActive: existingRole.status === 'ACTIVE',
-      userCount,
-      permissions: existingRole.permissions || [],
-      createdAt: existingRole.createdAt,
-      updatedAt: existingRole.updatedAt,
-    };
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'UPDATE',
+      entity: 'Role',
+      entityId: existingRole._id.toString(),
+      oldValues,
+      newValues: existingRole.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
-    return successResponse(res, result, 'Role updated successfully');
+    return successResponse(
+      res,
+      {
+        id: existingRole._id,
+        name: existingRole.name,
+        code: existingRole.code,
+        description: existingRole.description || '',
+        hierarchyLevel: existingRole.hierarchyLevel,
+        isSystem: existingRole.isSystem,
+        status: existingRole.status,
+        isActive: existingRole.status === 'ACTIVE',
+        userCount,
+        permissions: existingRole.permissions || [],
+        createdAt: existingRole.createdAt,
+        updatedAt: existingRole.updatedAt,
+      },
+      'Role updated successfully'
+    );
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Toggle Role Status
- */
 const toggleRoleStatus = async (req, res, next) => {
   try {
+    const schoolId = req.schoolContext?.schoolId;
     const { id } = req.params;
-    const role = await Role.findById(id);
+
+    const role = await Role.findOne({
+      _id: id,
+      $or: [{ isSystem: true }, { schoolId }],
+    });
+
     if (!role) {
-      return errorResponse(res, 'Role not found', 404, 'NOT_FOUND');
+      throw new NotFoundError('Role not found.');
     }
 
     role.status = role.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     await role.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: role.status === 'ACTIVE' ? 'ACTIVATE' : 'DEACTIVATE',
+      entity: 'Role',
+      entityId: role._id.toString(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     return successResponse(
       res,
@@ -227,42 +305,50 @@ const toggleRoleStatus = async (req, res, next) => {
   }
 };
 
-/**
- * Delete a Role
- */
 const deleteRole = async (req, res, next) => {
   try {
+    const schoolId = req.schoolContext?.schoolId;
     const { id } = req.params;
-    const role = await Role.findById(id);
+
+    const role = await Role.findOne({
+      _id: id,
+      $or: [{ isSystem: true }, { schoolId }],
+    });
 
     if (!role) {
-      return errorResponse(res, 'Role not found', 404, 'NOT_FOUND');
+      throw new NotFoundError('Role not found.');
     }
 
     if (role.isSystem) {
-      return errorResponse(res, 'System roles cannot be deleted', 403, 'FORBIDDEN');
+      throw new ForbiddenError('System roles cannot be deleted.');
     }
 
     const assignedUsers = await User.countDocuments({ roleId: role._id });
     if (assignedUsers > 0) {
-      return errorResponse(
-        res,
-        `Cannot delete role because ${assignedUsers} user(s) are currently assigned to it.`,
-        400,
-        'ROLE_IN_USE'
-      );
+      throw new ValidationError(`Cannot delete role because ${assignedUsers} user(s) are currently assigned to it.`);
     }
 
-    await Role.findByIdAndDelete(id);
+    await Role.deleteOne({ _id: id });
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'DELETE',
+      entity: 'Role',
+      entityId: id,
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
     return successResponse(res, null, 'Role deleted successfully');
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get All Permissions
- */
 const getPermissions = async (req, res, next) => {
   try {
     const permissions = await Permission.find({}).sort({ module: 1, name: 1 });

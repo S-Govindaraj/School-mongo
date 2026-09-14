@@ -4,7 +4,7 @@ const staffSchema = new mongoose.Schema(
   {
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    employeeId: { type: String, required: true, unique: true, trim: true },
+    employeeId: { type: String, required: true, trim: true },
     designation: { type: String, required: true, trim: true },
     department: { type: String, trim: true, default: '' },
     joiningDate: { type: Date, default: Date.now },
@@ -15,4 +15,7 @@ const staffSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+staffSchema.index({ schoolId: 1, employeeId: 1 }, { unique: true });
+
 module.exports = mongoose.model('Staff', staffSchema);
+

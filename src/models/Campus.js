@@ -14,4 +14,8 @@ const campusSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+campusSchema.index({ schoolId: 1, code: 1 }, { unique: true });
+campusSchema.index({ schoolId: 1, isMain: 1 });
+
 module.exports = mongoose.model('Campus', campusSchema);
+

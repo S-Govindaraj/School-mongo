@@ -3,6 +3,17 @@ const User = require('../models/User');
 const Role = require('../models/Role');
 const { AuthenticationError, ForbiddenError } = require('../utils/errors');
 
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: JWT_SECRET environment variable is missing in production!');
+    }
+    return 'development_school_erp_secure_jwt_secret_key_2026';
+  }
+  return secret;
+};
+
 const authenticate = async (req, res, next) => {
   try {
     let token = req.cookies?.token;
@@ -15,7 +26,7 @@ const authenticate = async (req, res, next) => {
       throw new AuthenticationError('Authentication required. Token missing.');
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key');
+    const decoded = jwt.verify(token, getJwtSecret());
     const user = await User.findById(decoded.userId).populate('roleId');
 
     if (!user || user.status !== 'ACTIVE') {
@@ -23,10 +34,41 @@ const authenticate = async (req, res, next) => {
     }
 
     req.user = user;
+    req.schoolContext = {
+      schoolId: user.schoolId?._id || user.schoolId,
+    };
     next();
   } catch (error) {
     next(new AuthenticationError(error.message || 'Invalid authentication token.'));
   }
+};
+
+const PERMISSION_ALIASES = {
+  'school.view': ['school_view'],
+  'school.manage': ['school_edit', 'school_view'],
+  'campus.view': ['campus_view'],
+  'campus.manage': ['campus_create', 'campus_edit', 'campus_delete', 'campus_view'],
+  'academic_year.view': ['academic_year_view'],
+  'academic_year.manage': ['academic_year_manage', 'academic_year_view'],
+  'academic_term.view': ['academic_term_view'],
+  'academic_term.manage': ['academic_term_manage', 'academic_term_view'],
+  'grade.view': ['grade_view'],
+  'grade.manage': ['grade_manage', 'grade_view'],
+  'section.view': ['section_view'],
+  'section.manage': ['section_manage', 'section_view'],
+  'subject.view': ['subject_view'],
+  'subject.manage': ['subject_manage', 'subject_view'],
+  'class_subject.view': ['class_subject_view'],
+  'class_subject.manage': ['class_subject_manage', 'class_subject_view'],
+  'staff.view': ['teacher_view'],
+  'staff.manage': ['teacher_create', 'teacher_edit', 'teacher_delete', 'teacher_view'],
+  'teacher_assignment.view': ['teacher_assignment_manage'],
+  'teacher_assignment.manage': ['teacher_assignment_manage'],
+  'settings.view': ['settings_view'],
+  'settings.manage': ['settings_manage', 'settings_view'],
+  'audit.view': ['audit_view'],
+  'role.view': ['role_view'],
+  'role.manage': ['role_create', 'role_edit', 'role_delete', 'role_activate', 'role_view'],
 };
 
 const requirePermissions = (...requiredPermissions) => {
@@ -35,10 +77,19 @@ const requirePermissions = (...requiredPermissions) => {
       return next(new ForbiddenError('Access denied. No role assigned.'));
     }
 
-    const userPermissions = req.user.roleId.permissions || [];
-    const hasPermission = requiredPermissions.every((perm) => userPermissions.includes(perm));
+    if (req.user.roleId.code === 'SUPER_ADMIN') {
+      return next();
+    }
 
-    if (!hasPermission && req.user.roleId.code !== 'SUPER_ADMIN') {
+    const userPermissions = req.user.roleId.permissions || [];
+
+    const hasPermission = requiredPermissions.every((perm) => {
+      if (userPermissions.includes(perm)) return true;
+      const aliases = PERMISSION_ALIASES[perm] || [];
+      return aliases.some((alias) => userPermissions.includes(alias));
+    });
+
+    if (!hasPermission) {
       return next(new ForbiddenError(`Required permission missing: ${requiredPermissions.join(', ')}`));
     }
 
@@ -49,4 +100,5 @@ const requirePermissions = (...requiredPermissions) => {
 module.exports = {
   authenticate,
   requirePermissions,
+  getJwtSecret,
 };
