@@ -31,14 +31,16 @@ const campusSchema = z.object({
 
 const updateCampusSchema = campusSchema.partial();
 
-const academicYearSchema = z.object({
+const baseAcademicYearSchema = z.object({
   name: z.string().min(1, 'Academic year name is required'),
   code: z.string().min(1, 'Academic year code is required'),
   startDate: z.string().or(z.date()),
   endDate: z.string().or(z.date()),
   isCurrent: z.boolean().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).optional(),
-}).refine((data) => {
+});
+
+const dateRefinement = [(data) => {
   if (data.startDate && data.endDate) {
     return new Date(data.startDate) < new Date(data.endDate);
   }
@@ -46,11 +48,12 @@ const academicYearSchema = z.object({
 }, {
   message: 'Start date must be before end date',
   path: ['startDate'],
-});
+}];
 
-const updateAcademicYearSchema = academicYearSchema.partial();
+const academicYearSchema = baseAcademicYearSchema.refine(...dateRefinement);
+const updateAcademicYearSchema = baseAcademicYearSchema.partial().refine(...dateRefinement);
 
-const academicTermSchema = z.object({
+const baseAcademicTermSchema = z.object({
   academicYearId: z.string().min(1, 'Academic year ID is required'),
   name: z.string().min(1, 'Term name is required'),
   code: z.string().min(1, 'Term code is required'),
@@ -59,17 +62,10 @@ const academicTermSchema = z.object({
   endDate: z.string().or(z.date()),
   isCurrent: z.boolean().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).optional(),
-}).refine((data) => {
-  if (data.startDate && data.endDate) {
-    return new Date(data.startDate) < new Date(data.endDate);
-  }
-  return true;
-}, {
-  message: 'Start date must be before end date',
-  path: ['startDate'],
 });
 
-const updateAcademicTermSchema = academicTermSchema.partial();
+const academicTermSchema = baseAcademicTermSchema.refine(...dateRefinement);
+const updateAcademicTermSchema = baseAcademicTermSchema.partial().refine(...dateRefinement);
 
 const gradeSchema = z.object({
   name: z.string().min(1, 'Grade name is required'),
