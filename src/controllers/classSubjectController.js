@@ -224,14 +224,15 @@ const deleteClassSubject = async (req, res, next) => {
       return successResponse(res, null, 'Class subject archived (referenced by teacher assignments)');
     }
 
-    await ClassSubject.deleteOne({ _id: id, schoolId });
+    record.status = 'ARCHIVED';
+    await record.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'ClassSubject',
       entityId: id,
       requestId: req.requestId,
@@ -239,7 +240,7 @@ const deleteClassSubject = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Class subject deleted successfully');
+    return successResponse(res, null, 'Class subject archived successfully');
   } catch (error) {
     next(error);
   }
@@ -249,6 +250,7 @@ module.exports = {
   getClassSubjects,
   createClassSubject,
   saveBulkClassSubjects,
+  createBulkClassSubjects: saveBulkClassSubjects,
   updateClassSubject,
   deleteClassSubject,
 };

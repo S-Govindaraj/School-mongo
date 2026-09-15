@@ -122,7 +122,8 @@ const deleteTeacherAssignment = async (req, res, next) => {
       throw new NotFoundError('Teacher assignment not found.');
     }
 
-    await TeacherAssignment.deleteOne({ _id: id, schoolId });
+    assignment.status = 'ARCHIVED';
+    await assignment.save();
 
     await logAuditEvent({
       schoolId,
@@ -137,7 +138,7 @@ const deleteTeacherAssignment = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Teacher assignment removed successfully');
+    return successResponse(res, null, 'Teacher assignment archived successfully');
   } catch (error) {
     next(error);
   }

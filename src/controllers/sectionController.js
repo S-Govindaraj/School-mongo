@@ -39,7 +39,7 @@ const createSection = async (req, res, next) => {
       throw new ValidationError('Section capacity must be greater than or equal to 0.');
     }
 
-    const formattedCode = code.trim().toUpperCase();
+    const formattedCode = String(code || '').trim().toUpperCase();
 
     const existing = await Section.findOne({ schoolId, gradeId, code: formattedCode });
     if (existing && existing.status !== 'ARCHIVED') {
@@ -158,14 +158,15 @@ const deleteSection = async (req, res, next) => {
       return successResponse(res, null, 'Section archived successfully (referenced by teacher assignments)');
     }
 
-    await Section.deleteOne({ _id: id, schoolId });
+    section.status = 'ARCHIVED';
+    await section.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'Section',
       entityId: id,
       requestId: req.requestId,
@@ -173,7 +174,7 @@ const deleteSection = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Section deleted successfully');
+    return successResponse(res, null, 'Section archived successfully');
   } catch (error) {
     next(error);
   }

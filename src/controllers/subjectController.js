@@ -24,7 +24,7 @@ const createSubject = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     const { name, code, shortName = '', type = 'CORE', description = '' } = req.body;
 
-    const formattedCode = code.trim().toUpperCase();
+    const formattedCode = String(code || '').trim().toUpperCase();
 
     const existing = await Subject.findOne({ schoolId, code: formattedCode });
     if (existing && existing.status !== 'ARCHIVED') {
@@ -140,14 +140,15 @@ const deleteSubject = async (req, res, next) => {
       return successResponse(res, null, 'Subject archived successfully (referenced by class configurations)');
     }
 
-    await Subject.deleteOne({ _id: id, schoolId });
+    subject.status = 'ARCHIVED';
+    await subject.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'Subject',
       entityId: id,
       requestId: req.requestId,
@@ -155,7 +156,7 @@ const deleteSubject = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Subject deleted successfully');
+    return successResponse(res, null, 'Subject archived successfully');
   } catch (error) {
     next(error);
   }

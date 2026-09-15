@@ -23,6 +23,25 @@ const getStaff = async (req, res, next) => {
   }
 };
 
+const getStaffById = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const staff = await Staff.findOne({
+      _id: req.params.id,
+      schoolId,
+      status: { $ne: 'ARCHIVED' },
+    }).populate('userId');
+
+    if (!staff) {
+      throw new NotFoundError('Staff member not found');
+    }
+
+    return successResponse(res, staff, 'Staff member retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 const createStaff = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
@@ -41,7 +60,7 @@ const createStaff = async (req, res, next) => {
       employmentStatus = 'TEACHING',
     } = req.body;
 
-    const formattedEmpId = employeeId.trim().toUpperCase();
+    const formattedEmpId = String(employeeId || '').trim().toUpperCase();
 
     const existing = await Staff.findOne({ schoolId, employeeId: formattedEmpId });
     if (existing && existing.status !== 'ARCHIVED') {
@@ -49,7 +68,7 @@ const createStaff = async (req, res, next) => {
     }
 
     const fullName = name || `${firstName || ''} ${lastName || ''}`.trim() || `Staff ${formattedEmpId}`;
-    const staffEmail = (email || `${formattedEmpId.toLowerCase()}@school.internal`).toLowerCase().trim();
+    const staffEmail = String(email || `${formattedEmpId.toLowerCase()}@school.internal`).toLowerCase().trim();
 
     // Check if user profile exists or create standard user account
     let user = await User.findOne({ email: staffEmail });
@@ -163,37 +182,15 @@ const deleteStaff = async (req, res, next) => {
       throw new NotFoundError('Staff member not found.');
     }
 
-    const hasAssignments = await TeacherAssignment.countDocuments({ schoolId, staffId: id, status: { $ne: 'ARCHIVED' } });
-
-    if (hasAssignments > 0) {
-      staff.status = 'ARCHIVED';
-      await staff.save();
-
-      await logAuditEvent({
-        schoolId,
-        actorId: req.user._id,
-        actorName: req.user.name,
-        actorEmail: req.user.email,
-        action: 'ARCHIVE',
-        entity: 'Staff',
-        entityId: staff._id.toString(),
-        reason: 'Referenced by active teacher assignments - archived for data preservation',
-        requestId: req.requestId,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-
-      return successResponse(res, null, 'Staff member archived (referenced by active teacher assignments)');
-    }
-
-    await Staff.deleteOne({ _id: id, schoolId });
+    staff.status = 'ARCHIVED';
+    await staff.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'Staff',
       entityId: id,
       requestId: req.requestId,
@@ -201,7 +198,7 @@ const deleteStaff = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Staff member deleted successfully');
+    return successResponse(res, null, 'Staff member archived successfully');
   } catch (error) {
     next(error);
   }
@@ -209,6 +206,7 @@ const deleteStaff = async (req, res, next) => {
 
 module.exports = {
   getStaff,
+  getStaffById,
   createStaff,
   updateStaff,
   deleteStaff,

@@ -1,0 +1,818 @@
+{
+  "AcademicHistory": [
+    "schoolId",
+    "studentId",
+    "academicYearId",
+    "gradeId",
+    "sectionId",
+    "enrollmentId"
+  ],
+  "AcademicTerm": [
+    "schoolId",
+    "academicYearId",
+    "name",
+    "code",
+    "startDate",
+    "endDate"
+  ],
+  "AcademicYear": [
+    "schoolId",
+    "name",
+    "code",
+    "startDate",
+    "endDate"
+  ],
+  "Admission": [
+    "schoolId",
+    "applicationNumber",
+    "academicYearId",
+    "gradeId",
+    "studentData.firstName",
+    "studentData.lastName",
+    "studentData.dob",
+    "studentData.gender"
+  ],
+  "Announcement": [
+    "schoolId",
+    "title",
+    "content"
+  ],
+  "ApiKey": [
+    "schoolId",
+    "name",
+    "prefix",
+    "keyHash"
+  ],
+  "Asset": [
+    "schoolId",
+    "assetCode",
+    "name"
+  ],
+  "AssetAssignment": [
+    "schoolId",
+    "assetId",
+    "assignedToType",
+    "assignedToId",
+    "assignedDate"
+  ],
+  "AssetDisposal": [
+    "schoolId",
+    "assetId",
+    "disposalDate",
+    "reason"
+  ],
+  "AssetMaintenance": [
+    "schoolId",
+    "assetId",
+    "serviceDate"
+  ],
+  "AssetTransfer": [
+    "schoolId",
+    "assetId",
+    "transferDate"
+  ],
+  "AttendanceAudit": [
+    "schoolId",
+    "attendanceRecordId",
+    "previousStatusId",
+    "newStatusId",
+    "reason",
+    "editedBy"
+  ],
+  "AttendanceRecord": [
+    "schoolId",
+    "attendanceSessionId",
+    "academicYearId",
+    "studentId",
+    "enrollmentId",
+    "gradeId",
+    "sectionId",
+    "date",
+    "statusId"
+  ],
+  "AttendanceSession": [
+    "schoolId",
+    "academicYearId",
+    "date",
+    "gradeId",
+    "sectionId"
+  ],
+  "AttendanceStatus": [
+    "schoolId",
+    "name",
+    "code",
+    "shortCode"
+  ],
+  "AuditLog": [
+    "action",
+    "entity"
+  ],
+  "AuditTrail": [
+    "action",
+    "resource"
+  ],
+  "Author": [
+    "schoolId",
+    "name"
+  ],
+  "Book": [
+    "schoolId",
+    "libraryId",
+    "title",
+    "categoryId"
+  ],
+  "BookCategory": [
+    "schoolId",
+    "name",
+    "code"
+  ],
+  "BookCopy": [
+    "schoolId",
+    "libraryId",
+    "bookId",
+    "accessionNumber",
+    "barcode"
+  ],
+  "BookIssue": [
+    "schoolId",
+    "libraryId",
+    "bookCopyId",
+    "memberId",
+    "issueDate",
+    "dueDate"
+  ],
+  "Campus": [
+    "schoolId",
+    "name",
+    "code"
+  ],
+  "ClassSubject": [
+    "schoolId",
+    "academicYearId",
+    "gradeId",
+    "subjectId"
+  ],
+  "Department": [
+    "schoolId",
+    "code",
+    "name"
+  ],
+  "Designation": [
+    "schoolId",
+    "code",
+    "name"
+  ],
+  "DisciplinaryAction": [
+    "schoolId",
+    "incidentId",
+    "actionType",
+    "actionDate"
+  ],
+  "DisciplineIncident": [
+    "schoolId",
+    "studentId",
+    "date",
+    "description"
+  ],
+  "Document": [
+    "schoolId",
+    "ownerType",
+    "ownerId",
+    "documentType",
+    "title",
+    "fileName",
+    "originalFileName",
+    "mimeType",
+    "size",
+    "storageKey"
+  ],
+  "DocumentVersion": [
+    "schoolId",
+    "documentId",
+    "version",
+    "fileName",
+    "storageKey",
+    "size",
+    "mimeType"
+  ],
+  "Driver": [
+    "schoolId",
+    "name",
+    "phone",
+    "licenseNumber",
+    "licenseExpiryDate"
+  ],
+  "EmployeeCategory": [
+    "schoolId",
+    "code",
+    "name"
+  ],
+  "EmployeeHistory": [
+    "schoolId",
+    "staffId",
+    "eventType"
+  ],
+  "EmployeeSalaryAssignment": [
+    "schoolId",
+    "staffId",
+    "salaryStructureId",
+    "baseSalary",
+    "effectiveFrom"
+  ],
+  "EmploymentProfile": [
+    "schoolId",
+    "staffId",
+    "employeeNumber",
+    "joiningDate"
+  ],
+  "Enrollment": [
+    "schoolId",
+    "studentId",
+    "academicYearId",
+    "gradeId",
+    "sectionId"
+  ],
+  "ExportJob": [
+    "schoolId",
+    "reportCode",
+    "module"
+  ],
+  "FeeCategory": [
+    "schoolId",
+    "name",
+    "code"
+  ],
+  "FeeConcession": [
+    "schoolId",
+    "studentId",
+    "academicYearId",
+    "name",
+    "code",
+    "type",
+    "value",
+    "reason"
+  ],
+  "FeeFineRule": [
+    "schoolId",
+    "name",
+    "code",
+    "value"
+  ],
+  "FeeStructure": [
+    "schoolId",
+    "academicYearId",
+    "name",
+    "code"
+  ],
+  "FeeStructureItem": [
+    "schoolId",
+    "feeStructureId",
+    "feeCategoryId",
+    "name",
+    "amount"
+  ],
+  "FinancialAdjustment": [
+    "schoolId",
+    "studentId",
+    "type",
+    "amount",
+    "reason"
+  ],
+  "GatePass": [
+    "schoolId",
+    "passNumber",
+    "type",
+    "reason"
+  ],
+  "GoodsReceipt": [
+    "schoolId",
+    "purchaseOrderId",
+    "vendorId",
+    "receiptNumber",
+    "receivedDate"
+  ],
+  "Grade": [
+    "schoolId",
+    "name",
+    "code"
+  ],
+  "Guardian": [
+    "schoolId",
+    "name",
+    "relationship",
+    "phone"
+  ],
+  "Holiday": [
+    "schoolId",
+    "name",
+    "date"
+  ],
+  "Hostel": [
+    "schoolId",
+    "code",
+    "name",
+    "capacity"
+  ],
+  "HostelAllocation": [
+    "schoolId",
+    "studentId",
+    "enrollmentId",
+    "academicYearId",
+    "hostelId",
+    "roomId",
+    "bedId",
+    "allocationDate"
+  ],
+  "HostelAttendance": [
+    "schoolId",
+    "hostelId",
+    "date",
+    "studentId",
+    "allocationId",
+    "status"
+  ],
+  "HostelBed": [
+    "schoolId",
+    "roomId",
+    "bedNumber"
+  ],
+  "HostelBlock": [
+    "schoolId",
+    "hostelId",
+    "code",
+    "name"
+  ],
+  "HostelRoom": [
+    "schoolId",
+    "hostelId",
+    "roomNumber",
+    "capacity"
+  ],
+  "InventoryCategory": [
+    "schoolId",
+    "code",
+    "name"
+  ],
+  "InventoryItem": [
+    "schoolId",
+    "categoryId",
+    "itemCode",
+    "name"
+  ],
+  "Invoice": [
+    "schoolId",
+    "academicYearId",
+    "studentId",
+    "enrollmentId",
+    "invoiceNumber",
+    "invoiceDate",
+    "dueDate",
+    "billingPeriod",
+    "subtotal",
+    "totalAmount",
+    "balanceAmount"
+  ],
+  "InvoiceItem": [
+    "schoolId",
+    "invoiceId",
+    "feeCategoryId",
+    "description",
+    "unitAmount",
+    "grossAmount",
+    "netAmount"
+  ],
+  "LeaveBalance": [
+    "schoolId",
+    "staffId",
+    "leaveTypeId",
+    "academicYearId"
+  ],
+  "LeaveRequest": [
+    "schoolId",
+    "studentId",
+    "academicYearId",
+    "fromDate",
+    "toDate",
+    "reason"
+  ],
+  "LeaveType": [
+    "schoolId",
+    "code",
+    "name",
+    "annualQuota"
+  ],
+  "Library": [
+    "schoolId",
+    "name",
+    "code"
+  ],
+  "LibraryMember": [
+    "schoolId",
+    "memberType",
+    "membershipNumber"
+  ],
+  "LibrarySetting": [
+    "schoolId"
+  ],
+  "MedicalVisit": [
+    "schoolId",
+    "studentId",
+    "visitDate",
+    "reason"
+  ],
+  "Message": [
+    "schoolId",
+    "conversationId",
+    "senderUserId",
+    "recipientUserId",
+    "content"
+  ],
+  "MobileDevice": [
+    "schoolId",
+    "userId",
+    "deviceId"
+  ],
+  "Notification": [
+    "schoolId",
+    "recipientUserId",
+    "recipientType",
+    "title",
+    "message"
+  ],
+  "NotificationPreference": [
+    "schoolId",
+    "userId"
+  ],
+  "NotificationTemplate": [
+    "schoolId",
+    "name",
+    "code",
+    "category",
+    "body"
+  ],
+  "Payment": [
+    "schoolId",
+    "studentId",
+    "paymentNumber",
+    "paymentDate",
+    "amount",
+    "idempotencyKey"
+  ],
+  "PaymentAllocation": [
+    "schoolId",
+    "paymentId",
+    "invoiceId",
+    "studentId",
+    "allocatedAmount"
+  ],
+  "PayrollAdjustment": [
+    "schoolId",
+    "payrollPeriodId",
+    "staffId",
+    "amount",
+    "type",
+    "reason"
+  ],
+  "PayrollEntry": [
+    "schoolId",
+    "payrollPeriodId",
+    "staffId",
+    "grossAmount",
+    "netAmount"
+  ],
+  "PayrollPeriod": [
+    "schoolId",
+    "year",
+    "month",
+    "startDate",
+    "endDate"
+  ],
+  "Payslip": [
+    "schoolId",
+    "payrollPeriodId",
+    "staffId"
+  ],
+  "Period": [
+    "schoolId",
+    "name",
+    "code",
+    "sequence",
+    "startTime",
+    "endTime"
+  ],
+  "Permission": [
+    "module",
+    "action",
+    "code",
+    "name"
+  ],
+  "Plan": [
+    "code",
+    "name"
+  ],
+  "PlatformAdmin": [
+    "userId",
+    "email",
+    "firstName",
+    "lastName"
+  ],
+  "PlatformInvoice": [
+    "schoolId",
+    "subscriptionId",
+    "invoiceNumber",
+    "subtotal",
+    "total"
+  ],
+  "Publisher": [
+    "schoolId",
+    "name"
+  ],
+  "PurchaseOrder": [
+    "schoolId",
+    "vendorId",
+    "orderNumber",
+    "orderDate",
+    "subtotal",
+    "total"
+  ],
+  "PurchaseRequest": [
+    "schoolId",
+    "requestCode",
+    "requestedBy"
+  ],
+  "Receipt": [
+    "schoolId",
+    "studentId",
+    "paymentId",
+    "receiptNumber",
+    "amount",
+    "paymentMethod"
+  ],
+  "Refund": [
+    "schoolId",
+    "paymentId",
+    "studentId",
+    "refundNumber",
+    "refundAmount",
+    "reason"
+  ],
+  "ReportDefinition": [
+    "schoolId",
+    "reportCode",
+    "name",
+    "module"
+  ],
+  "ReportSchedule": [
+    "schoolId",
+    "reportId",
+    "reportCode",
+    "name",
+    "frequency",
+    "nextRunAt"
+  ],
+  "Role": [
+    "name",
+    "code",
+    "hierarchyLevel"
+  ],
+  "RouteStop": [
+    "schoolId",
+    "routeId",
+    "stopCode",
+    "stopName",
+    "sequence"
+  ],
+  "SalaryComponent": [
+    "schoolId",
+    "code",
+    "name",
+    "type",
+    "calculationType"
+  ],
+  "SalaryStructure": [
+    "schoolId",
+    "code",
+    "name",
+    "effectiveFrom"
+  ],
+  "School": [
+    "name",
+    "code"
+  ],
+  "Section": [
+    "schoolId",
+    "gradeId",
+    "name",
+    "code"
+  ],
+  "Setting": [
+    "category",
+    "key",
+    "value"
+  ],
+  "Shift": [
+    "schoolId",
+    "code",
+    "name",
+    "startTime",
+    "endTime"
+  ],
+  "Staff": [
+    "schoolId",
+    "userId",
+    "employeeId",
+    "designation"
+  ],
+  "StaffAttendance": [
+    "schoolId",
+    "staffId",
+    "date",
+    "attendanceStatus"
+  ],
+  "StaffLeaveRequest": [
+    "schoolId",
+    "staffId",
+    "leaveTypeId",
+    "startDate",
+    "endDate",
+    "numberOfDays",
+    "reason"
+  ],
+  "Stock": [
+    "schoolId",
+    "warehouseId",
+    "itemId"
+  ],
+  "StockMovement": [
+    "schoolId",
+    "warehouseId",
+    "itemId",
+    "movementType",
+    "quantity"
+  ],
+  "Student": [
+    "schoolId",
+    "studentNumber",
+    "admissionNumber",
+    "firstName",
+    "lastName",
+    "dob",
+    "gender"
+  ],
+  "StudentDocument": [
+    "schoolId",
+    "studentId",
+    "documentType",
+    "title",
+    "fileName",
+    "fileUrl"
+  ],
+  "StudentFeeAssignment": [
+    "schoolId",
+    "academicYearId",
+    "studentId",
+    "enrollmentId",
+    "feeStructureId"
+  ],
+  "StudentGuardian": [
+    "schoolId",
+    "studentId",
+    "guardianId",
+    "relationship"
+  ],
+  "StudentHealthProfile": [
+    "schoolId",
+    "studentId"
+  ],
+  "StudentLedger": [
+    "schoolId",
+    "studentId",
+    "referenceType",
+    "referenceId",
+    "transactionType",
+    "balance"
+  ],
+  "Subject": [
+    "schoolId",
+    "name",
+    "code"
+  ],
+  "Subscription": [
+    "schoolId",
+    "planId",
+    "planCode"
+  ],
+  "SubscriptionEvent": [
+    "schoolId",
+    "subscriptionId",
+    "eventType"
+  ],
+  "SyncRecord": [
+    "schoolId",
+    "userId",
+    "idempotencyKey",
+    "entityType",
+    "operation"
+  ],
+  "TeacherAssignment": [
+    "schoolId",
+    "academicYearId",
+    "staffId",
+    "gradeId",
+    "sectionId",
+    "subjectId"
+  ],
+  "Timetable": [
+    "schoolId",
+    "academicYearId",
+    "gradeId",
+    "sectionId",
+    "dayOfWeek",
+    "periodId",
+    "subjectId",
+    "teacherId"
+  ],
+  "TransportAssignment": [
+    "schoolId",
+    "academicYearId",
+    "studentId",
+    "enrollmentId",
+    "routeId",
+    "routeStopId",
+    "effectiveFrom"
+  ],
+  "TransportAttendance": [
+    "schoolId",
+    "academicYearId",
+    "date",
+    "routeId",
+    "studentId",
+    "assignmentId",
+    "tripType"
+  ],
+  "TransportRoute": [
+    "schoolId",
+    "academicYearId",
+    "routeCode",
+    "routeName"
+  ],
+  "UsageRecord": [
+    "schoolId",
+    "metric",
+    "value",
+    "period"
+  ],
+  "User": [
+    "roleId",
+    "email",
+    "password",
+    "name"
+  ],
+  "Vehicle": [
+    "schoolId",
+    "vehicleNumber",
+    "registrationNumber",
+    "capacity"
+  ],
+  "Vendor": [
+    "schoolId",
+    "vendorCode",
+    "name"
+  ],
+  "Visitor": [
+    "schoolId",
+    "passNumber",
+    "name",
+    "phone",
+    "purpose",
+    "visitDate"
+  ],
+  "VisitorAppointment": [
+    "schoolId",
+    "appointmentDate",
+    "hostStaffId"
+  ],
+  "Warehouse": [
+    "schoolId",
+    "code",
+    "name"
+  ],
+  "Webhook": [
+    "schoolId",
+    "name",
+    "url",
+    "secret"
+  ],
+  "WebhookDelivery": [
+    "schoolId",
+    "webhookId",
+    "eventType",
+    "eventId"
+  ],
+  "WorkflowDefinition": [
+    "schoolId",
+    "code",
+    "name",
+    "entityType"
+  ]
+}

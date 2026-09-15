@@ -78,11 +78,12 @@ const requirePermissions = (...requiredPermissions) => {
       return next(new ForbiddenError('Access denied. No role assigned.'));
     }
 
-    if (req.user.roleId.code === 'SUPER_ADMIN') {
+    const userPermissions = req.user.roleId.permissions || [];
+
+    // Bypass check ONLY if wildcard '*' is explicitly granted or unconfigured legacy
+    if (userPermissions.includes('*')) {
       return next();
     }
-
-    const userPermissions = req.user.roleId.permissions || [];
 
     const hasPermission = requiredPermissions.every((perm) => {
       // Check direct code match

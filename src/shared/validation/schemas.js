@@ -173,6 +173,108 @@ const roleSchema = z.object({
 
 const updateRoleSchema = roleSchema.partial();
 
+const studentSchema = z.object({
+  firstName: z.string().min(1, 'First name is required'),
+  middleName: z.string().optional().or(z.literal('')),
+  lastName: z.string().min(1, 'Last name is required'),
+  dob: z.string().or(z.date()),
+  gender: z.enum(['MALE', 'FEMALE', 'OTHER']),
+  bloodGroup: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'UNKNOWN']).optional(),
+  nationality: z.string().optional(),
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
+  phone: z.string().optional(),
+  address: z.object({
+    street: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    postalCode: z.string().optional(),
+    country: z.string().optional(),
+  }).optional(),
+  previousSchool: z.string().optional(),
+  emergencyContact: z.object({
+    name: z.string().optional(),
+    relationship: z.string().optional(),
+    phone: z.string().optional(),
+  }).optional(),
+  guardians: z.array(z.object({
+    name: z.string().min(1, 'Guardian name is required'),
+    relationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN', 'OTHER']),
+    phone: z.string().min(1, 'Guardian phone is required'),
+    email: z.string().email('Invalid email address').optional().or(z.literal('')),
+    occupation: z.string().optional(),
+    address: z.string().optional(),
+    isPrimary: z.boolean().optional(),
+    isEmergencyContact: z.boolean().optional(),
+  })).optional(),
+});
+
+const updateStudentSchema = studentSchema.partial();
+
+const studentStatusSchema = z.object({
+  status: z.enum(['APPLICANT', 'ADMITTED', 'ACTIVE', 'PROMOTED', 'GRADUATED', 'ALUMNI', 'WITHDRAWN', 'TRANSFERRED', 'SUSPENDED', 'INACTIVE', 'ARCHIVED']),
+  reason: z.string().optional(),
+});
+
+const guardianSchema = z.object({
+  name: z.string().min(1, 'Guardian name is required'),
+  relationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN', 'OTHER']),
+  phone: z.string().min(1, 'Phone is required'),
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
+  occupation: z.string().optional(),
+  address: z.string().optional(),
+  isPrimary: z.boolean().optional(),
+  isEmergencyContact: z.boolean().optional(),
+});
+
+const updateGuardianSchema = guardianSchema.partial();
+
+const admissionSchema = z.object({
+  academicYearId: z.string().min(1, 'Academic Year is required'),
+  gradeId: z.string().min(1, 'Grade is required'),
+  studentData: z.object({
+    firstName: z.string().min(1, 'First name is required'),
+    middleName: z.string().optional().or(z.literal('')),
+    lastName: z.string().min(1, 'Last name is required'),
+    dob: z.string().or(z.date()),
+    gender: z.enum(['MALE', 'FEMALE', 'OTHER']),
+    bloodGroup: z.string().optional(),
+    nationality: z.string().optional(),
+    email: z.string().email().optional().or(z.literal('')),
+    phone: z.string().optional(),
+    address: z.object({
+      street: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      postalCode: z.string().optional(),
+      country: z.string().optional(),
+    }).optional(),
+    previousSchool: z.string().optional(),
+  }),
+  guardianData: z.array(z.object({
+    name: z.string().min(1, 'Guardian name is required'),
+    relationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN', 'OTHER']),
+    phone: z.string().min(1, 'Guardian phone is required'),
+    email: z.string().email().optional().or(z.literal('')),
+    occupation: z.string().optional(),
+    isPrimary: z.boolean().optional(),
+    isEmergencyContact: z.boolean().optional(),
+  })).min(1, 'At least one guardian is required'),
+  notes: z.string().optional(),
+});
+
+const updateAdmissionStatusSchema = z.object({
+  status: z.enum(['APPLICATION', 'UNDER_REVIEW', 'APPROVED', 'ADMITTED', 'ENROLLED', 'REJECTED', 'ARCHIVED']),
+  rejectionReason: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const enrollmentSchema = z.object({
+  studentId: z.string().min(1, 'Student is required'),
+  academicYearId: z.string().min(1, 'Academic Year is required'),
+  gradeId: z.string().min(1, 'Grade is required'),
+  sectionId: z.string().min(1, 'Section is required'),
+});
+
 module.exports = {
   schoolProfileSchema,
   campusSchema,
@@ -197,4 +299,12 @@ module.exports = {
   updateSettingsSchema,
   roleSchema,
   updateRoleSchema,
+  studentSchema,
+  updateStudentSchema,
+  studentStatusSchema,
+  guardianSchema,
+  updateGuardianSchema,
+  admissionSchema,
+  updateAdmissionStatusSchema,
+  enrollmentSchema,
 };

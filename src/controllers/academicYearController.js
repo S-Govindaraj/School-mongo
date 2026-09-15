@@ -52,7 +52,7 @@ const createAcademicYear = async (req, res, next) => {
     const year = await AcademicYear.create({
       schoolId,
       name,
-      code: code.trim(),
+      code: String(code || '').trim(),
       startDate: start,
       endDate: end,
       isCurrent: Boolean(isCurrent),
@@ -197,14 +197,16 @@ const deleteAcademicYear = async (req, res, next) => {
       return successResponse(res, null, 'Academic year archived (referenced by historical records)');
     }
 
-    await AcademicYear.deleteOne({ _id: id, schoolId });
+    year.status = 'ARCHIVED';
+    year.isCurrent = false;
+    await year.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'AcademicYear',
       entityId: id,
       requestId: req.requestId,
@@ -212,7 +214,7 @@ const deleteAcademicYear = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Academic year deleted successfully');
+    return successResponse(res, null, 'Academic year archived successfully');
   } catch (error) {
     next(error);
   }

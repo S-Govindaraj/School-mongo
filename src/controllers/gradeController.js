@@ -25,7 +25,7 @@ const createGrade = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     const { name, code, category = 'Primary', sequenceOrder = 1 } = req.body;
 
-    const formattedCode = code.trim().toUpperCase();
+    const formattedCode = String(code || '').trim().toUpperCase();
 
     const existing = await Grade.findOne({ schoolId, code: formattedCode });
     if (existing && existing.status !== 'ARCHIVED') {
@@ -140,14 +140,15 @@ const deleteGrade = async (req, res, next) => {
       return successResponse(res, null, 'Grade archived successfully (referenced by sections/class subjects)');
     }
 
-    await Grade.deleteOne({ _id: id, schoolId });
+    grade.status = 'ARCHIVED';
+    await grade.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'Grade',
       entityId: id,
       requestId: req.requestId,
@@ -155,7 +156,7 @@ const deleteGrade = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Grade deleted successfully');
+    return successResponse(res, null, 'Grade archived successfully');
   } catch (error) {
     next(error);
   }

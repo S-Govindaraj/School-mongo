@@ -99,7 +99,7 @@ const createCampus = async (req, res, next) => {
     const campus = await Campus.create({
       schoolId,
       name,
-      code: code.trim().toUpperCase(),
+      code: String(code || '').trim().toUpperCase(),
       address: address || '',
       phone: phone || '',
       email: email || '',

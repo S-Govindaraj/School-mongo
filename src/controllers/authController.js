@@ -19,7 +19,8 @@ const login = async (req, res, next) => {
       throw new ValidationError('Email and password are required.');
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() })
+    const formattedEmail = String(email || '').toLowerCase().trim();
+    const user = await User.findOne({ email: formattedEmail })
       .populate('roleId')
       .populate('schoolId');
 

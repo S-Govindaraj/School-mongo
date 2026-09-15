@@ -48,7 +48,7 @@ const createAcademicTerm = async (req, res, next) => {
       schoolId,
       academicYearId,
       name,
-      code: code.trim(),
+      code: String(code || '').trim(),
       sequence: Number(sequence),
       startDate: start,
       endDate: end,

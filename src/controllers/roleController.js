@@ -39,7 +39,7 @@ const getRoles = async (req, res, next) => {
       status: r.status,
       isActive: r.status === 'ACTIVE',
       userCount: userCountMap[r._id.toString()] || 0,
-      permissions: r.permissions || [],
+      permissions: (r.permissions || []).map((p) => (typeof p === 'string' ? p.replace(/\./g, '_') : p)),
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     }));
@@ -114,7 +114,7 @@ const getRoleById = async (req, res, next) => {
         status: role.status,
         isActive: role.status === 'ACTIVE',
         userCount,
-        permissions: role.permissions || [],
+        permissions: (role.permissions || []).map((p) => (typeof p === 'string' ? p.replace(/\./g, '_') : p)),
         createdAt: role.createdAt,
         updatedAt: role.updatedAt,
       },
@@ -130,7 +130,7 @@ const createRole = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     const { name, code, description = '', hierarchyLevel = 5, permissions = [] } = req.body;
 
-    const formattedCode = code.trim().toUpperCase().replace(/\s+/g, '_');
+    const formattedCode = String(code || '').trim().toUpperCase().replace(/\s+/g, '_');
 
     const existing = await Role.findOne({
       code: formattedCode,
@@ -146,7 +146,7 @@ const createRole = async (req, res, next) => {
       existing.name = name;
       existing.description = description;
       existing.hierarchyLevel = Number(hierarchyLevel);
-      existing.permissions = Array.isArray(permissions) ? permissions : [];
+      existing.permissions = Array.isArray(permissions) ? permissions.map((p) => (typeof p === 'string' ? p.replace(/\./g, '_') : p)) : [];
       existing.status = 'ACTIVE';
       newRole = await existing.save();
     } else {
@@ -158,7 +158,7 @@ const createRole = async (req, res, next) => {
         hierarchyLevel: Number(hierarchyLevel),
         isSystem: false,
         status: 'ACTIVE',
-        permissions: Array.isArray(permissions) ? permissions : [],
+        permissions: Array.isArray(permissions) ? permissions.map((p) => (typeof p === 'string' ? p.replace(/\./g, '_') : p)) : [],
       });
     }
 
@@ -221,7 +221,7 @@ const updateRole = async (req, res, next) => {
     if (description !== undefined) existingRole.description = description;
     if (hierarchyLevel !== undefined) existingRole.hierarchyLevel = Number(hierarchyLevel);
     if (status !== undefined) existingRole.status = status;
-    if (Array.isArray(permissions)) existingRole.permissions = permissions;
+    if (Array.isArray(permissions)) existingRole.permissions = permissions.map((p) => (typeof p === 'string' ? p.replace(/\./g, '_') : p));
 
     await existingRole.save();
 
@@ -328,14 +328,15 @@ const deleteRole = async (req, res, next) => {
       throw new ValidationError(`Cannot delete role because ${assignedUsers} user(s) are currently assigned to it.`);
     }
 
-    await Role.deleteOne({ _id: id });
+    role.status = 'ARCHIVED';
+    await role.save();
 
     await logAuditEvent({
       schoolId,
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'DELETE',
+      action: 'ARCHIVE',
       entity: 'Role',
       entityId: id,
       requestId: req.requestId,
@@ -343,7 +344,7 @@ const deleteRole = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Role deleted successfully');
+    return successResponse(res, null, 'Role archived successfully');
   } catch (error) {
     next(error);
   }
@@ -356,11 +357,12 @@ const getPermissions = async (req, res, next) => {
     const grouped = permissions.reduce((acc, p) => {
       const mod = p.module || 'General';
       if (!acc[mod]) acc[mod] = [];
+      const codeNormalized = (p.code || '').replace(/\./g, '_');
       acc[mod].push({
         id: p._id,
         module: p.module,
         action: p.action,
-        code: p.code,
+        code: codeNormalized,
         name: p.name,
         description: p.description,
       });
@@ -374,7 +376,7 @@ const getPermissions = async (req, res, next) => {
           id: p._id,
           module: p.module,
           action: p.action,
-          code: p.code,
+          code: (p.code || '').replace(/\./g, '_'),
           name: p.name,
           description: p.description,
         })),

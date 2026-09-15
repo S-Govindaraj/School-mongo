@@ -1,0 +1,2984 @@
+{
+  "AcademicHistory": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "gradeId",
+      "sectionId",
+      "enrollmentId",
+      "promotionStatus",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "gradeId",
+      "sectionId",
+      "enrollmentId"
+    ]
+  },
+  "AcademicTerm": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "name",
+      "code",
+      "sequence",
+      "startDate",
+      "endDate",
+      "isCurrent",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "name",
+      "code",
+      "startDate",
+      "endDate"
+    ]
+  },
+  "AcademicYear": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "startDate",
+      "endDate",
+      "isCurrent",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code",
+      "startDate",
+      "endDate"
+    ]
+  },
+  "Admission": {
+    "paths": [
+      "schoolId",
+      "applicationNumber",
+      "applicationDate",
+      "academicYearId",
+      "gradeId",
+      "studentData.firstName",
+      "studentData.middleName",
+      "studentData.lastName",
+      "studentData.dob",
+      "studentData.gender",
+      "studentData.bloodGroup",
+      "studentData.nationality",
+      "studentData.email",
+      "studentData.phone",
+      "studentData.address.street",
+      "studentData.address.city",
+      "studentData.address.state",
+      "studentData.address.postalCode",
+      "studentData.address.country",
+      "studentData.previousSchool",
+      "guardianData",
+      "status",
+      "documents",
+      "notes",
+      "approvedBy",
+      "approvalDate",
+      "rejectionReason",
+      "studentId",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "applicationNumber",
+      "academicYearId",
+      "gradeId",
+      "studentData.firstName",
+      "studentData.lastName",
+      "studentData.dob",
+      "studentData.gender"
+    ]
+  },
+  "Announcement": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "academicYearId",
+      "title",
+      "content",
+      "summary",
+      "announcementType",
+      "priority",
+      "audienceType",
+      "targetGradeIds",
+      "targetSectionIds",
+      "targetStudentIds",
+      "targetStaffIds",
+      "targetRoleIds",
+      "publishAt",
+      "expiresAt",
+      "status",
+      "attachments",
+      "createdBy",
+      "publishedBy",
+      "publishedAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "title",
+      "content"
+    ]
+  },
+  "ApiKey": {
+    "paths": [
+      "schoolId",
+      "name",
+      "description",
+      "prefix",
+      "keyHash",
+      "scopes",
+      "ipWhitelist",
+      "status",
+      "expiresAt",
+      "lastUsedAt",
+      "usageCount",
+      "rateLimitPerMinute",
+      "revokedAt",
+      "revokedBy",
+      "revokeReason",
+      "createdBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "prefix",
+      "keyHash"
+    ]
+  },
+  "Asset": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "assetCode",
+      "name",
+      "category",
+      "serialNumber",
+      "purchaseDate",
+      "purchasePrice",
+      "vendorId",
+      "warrantyStart",
+      "warrantyEnd",
+      "currentLocation",
+      "status",
+      "condition",
+      "depreciationMethod",
+      "depreciationRate",
+      "usefulLife",
+      "residualValue",
+      "assignedToType",
+      "assignedToId",
+      "notes",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "assetCode",
+      "name"
+    ]
+  },
+  "AssetAssignment": {
+    "paths": [
+      "schoolId",
+      "assetId",
+      "assignedToType",
+      "assignedToId",
+      "assignedDate",
+      "returnedDate",
+      "assignedBy",
+      "returnedBy",
+      "status",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "assetId",
+      "assignedToType",
+      "assignedToId",
+      "assignedDate"
+    ]
+  },
+  "AssetDisposal": {
+    "paths": [
+      "schoolId",
+      "assetId",
+      "disposalDate",
+      "reason",
+      "disposalMethod",
+      "disposalValue",
+      "approvedBy",
+      "remarks",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "assetId",
+      "disposalDate",
+      "reason"
+    ]
+  },
+  "AssetMaintenance": {
+    "paths": [
+      "schoolId",
+      "assetId",
+      "maintenanceType",
+      "vendorId",
+      "serviceDate",
+      "nextServiceDate",
+      "cost",
+      "description",
+      "status",
+      "documentId",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "assetId",
+      "serviceDate"
+    ]
+  },
+  "AssetTransfer": {
+    "paths": [
+      "schoolId",
+      "assetId",
+      "fromLocation",
+      "toLocation",
+      "transferredBy",
+      "transferDate",
+      "reason",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "assetId",
+      "transferDate"
+    ]
+  },
+  "AttendanceAudit": {
+    "paths": [
+      "schoolId",
+      "attendanceRecordId",
+      "previousStatusId",
+      "newStatusId",
+      "reason",
+      "editedBy",
+      "timestamp",
+      "ipAddress",
+      "requestId",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "attendanceRecordId",
+      "previousStatusId",
+      "newStatusId",
+      "reason",
+      "editedBy"
+    ]
+  },
+  "AttendanceRecord": {
+    "paths": [
+      "schoolId",
+      "attendanceSessionId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "gradeId",
+      "sectionId",
+      "date",
+      "periodId",
+      "statusId",
+      "markedBy",
+      "markedAt",
+      "remarks",
+      "source",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "attendanceSessionId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "gradeId",
+      "sectionId",
+      "date",
+      "statusId"
+    ]
+  },
+  "AttendanceSession": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "date",
+      "gradeId",
+      "sectionId",
+      "periodId",
+      "subjectId",
+      "teacherId",
+      "attendanceType",
+      "status",
+      "startedAt",
+      "completedAt",
+      "markedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "date",
+      "gradeId",
+      "sectionId"
+    ]
+  },
+  "AttendanceStatus": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "shortCode",
+      "countsAsPresent",
+      "countsAsAbsent",
+      "requiresReason",
+      "colorToken",
+      "sequence",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code",
+      "shortCode"
+    ]
+  },
+  "AuditLog": {
+    "paths": [
+      "schoolId",
+      "actorId",
+      "actorName",
+      "actorEmail",
+      "action",
+      "entity",
+      "entityId",
+      "oldValues",
+      "newValues",
+      "reason",
+      "requestId",
+      "details",
+      "ipAddress",
+      "userAgent",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "action",
+      "entity"
+    ]
+  },
+  "AuditTrail": {
+    "paths": [
+      "schoolId",
+      "actorId",
+      "actorType",
+      "actorEmail",
+      "action",
+      "resource",
+      "resourceId",
+      "changes.before",
+      "changes.after",
+      "metadata",
+      "ip",
+      "userAgent",
+      "requestId",
+      "result",
+      "errorMessage",
+      "duration",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "action",
+      "resource"
+    ]
+  },
+  "Author": {
+    "paths": [
+      "schoolId",
+      "name",
+      "biography",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name"
+    ]
+  },
+  "Book": {
+    "paths": [
+      "schoolId",
+      "libraryId",
+      "isbn",
+      "title",
+      "subtitle",
+      "categoryId",
+      "authorIds",
+      "publisherId",
+      "edition",
+      "publicationYear",
+      "language",
+      "pages",
+      "description",
+      "coverImage",
+      "shelfLocation",
+      "tags",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "libraryId",
+      "title",
+      "categoryId"
+    ]
+  },
+  "BookCategory": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "description",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code"
+    ]
+  },
+  "BookCopy": {
+    "paths": [
+      "schoolId",
+      "libraryId",
+      "bookId",
+      "accessionNumber",
+      "barcode",
+      "condition",
+      "purchaseDate",
+      "purchasePrice",
+      "currentLocation",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "libraryId",
+      "bookId",
+      "accessionNumber",
+      "barcode"
+    ]
+  },
+  "BookIssue": {
+    "paths": [
+      "schoolId",
+      "libraryId",
+      "bookCopyId",
+      "memberId",
+      "issueDate",
+      "dueDate",
+      "returnDate",
+      "status",
+      "issuedBy",
+      "returnedBy",
+      "fineAmount",
+      "finePaidStatus",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "libraryId",
+      "bookCopyId",
+      "memberId",
+      "issueDate",
+      "dueDate"
+    ]
+  },
+  "Campus": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "address",
+      "phone",
+      "email",
+      "isMain",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code"
+    ]
+  },
+  "ClassSubject": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "gradeId",
+      "subjectId",
+      "isMandatory",
+      "weeklyPeriods",
+      "passMarks",
+      "maxMarks",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "gradeId",
+      "subjectId"
+    ]
+  },
+  "Department": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "code",
+      "name",
+      "description",
+      "headStaffId",
+      "status",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name"
+    ]
+  },
+  "Designation": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "departmentId",
+      "description",
+      "level",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name"
+    ]
+  },
+  "DisciplinaryAction": {
+    "paths": [
+      "schoolId",
+      "incidentId",
+      "actionType",
+      "actionDate",
+      "duration",
+      "reason",
+      "notes",
+      "approvedBy",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "incidentId",
+      "actionType",
+      "actionDate"
+    ]
+  },
+  "DisciplineIncident": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "enrollmentId",
+      "date",
+      "category",
+      "severity",
+      "description",
+      "reportedBy",
+      "witnesses",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "date",
+      "description"
+    ]
+  },
+  "Document": {
+    "paths": [
+      "schoolId",
+      "ownerType",
+      "ownerId",
+      "documentType",
+      "title",
+      "fileName",
+      "originalFileName",
+      "mimeType",
+      "extension",
+      "size",
+      "storageKey",
+      "storageProvider",
+      "checksum",
+      "version",
+      "status",
+      "visibility",
+      "uploadedBy",
+      "verifiedBy",
+      "verifiedAt",
+      "expiresAt",
+      "rejectionReason",
+      "metadata",
+      "metadata.$*",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "ownerType",
+      "ownerId",
+      "documentType",
+      "title",
+      "fileName",
+      "originalFileName",
+      "mimeType",
+      "size",
+      "storageKey"
+    ]
+  },
+  "DocumentVersion": {
+    "paths": [
+      "schoolId",
+      "documentId",
+      "version",
+      "fileName",
+      "storageKey",
+      "size",
+      "mimeType",
+      "checksum",
+      "uploadedBy",
+      "uploadedAt",
+      "notes",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "documentId",
+      "version",
+      "fileName",
+      "storageKey",
+      "size",
+      "mimeType"
+    ]
+  },
+  "Driver": {
+    "paths": [
+      "schoolId",
+      "employeeId",
+      "name",
+      "phone",
+      "alternatePhone",
+      "licenseNumber",
+      "licenseType",
+      "licenseExpiryDate",
+      "joiningDate",
+      "address",
+      "emergencyContact",
+      "status",
+      "notes",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "phone",
+      "licenseNumber",
+      "licenseExpiryDate"
+    ]
+  },
+  "EmployeeCategory": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "description",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name"
+    ]
+  },
+  "EmployeeHistory": {
+    "paths": [
+      "schoolId",
+      "staffId",
+      "eventType",
+      "effectiveDate",
+      "oldValue",
+      "newValue",
+      "reason",
+      "performedBy",
+      "metadata",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "staffId",
+      "eventType"
+    ]
+  },
+  "EmployeeSalaryAssignment": {
+    "paths": [
+      "schoolId",
+      "staffId",
+      "salaryStructureId",
+      "baseSalary",
+      "effectiveFrom",
+      "effectiveTo",
+      "version",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "staffId",
+      "salaryStructureId",
+      "baseSalary",
+      "effectiveFrom"
+    ]
+  },
+  "EmploymentProfile": {
+    "paths": [
+      "schoolId",
+      "staffId",
+      "employeeNumber",
+      "departmentId",
+      "designationId",
+      "categoryId",
+      "joiningDate",
+      "confirmationDate",
+      "employmentType",
+      "workLocation",
+      "reportingManagerId",
+      "status",
+      "probationEndDate",
+      "resignationDate",
+      "lastWorkingDate",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "staffId",
+      "employeeNumber",
+      "joiningDate"
+    ]
+  },
+  "Enrollment": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "gradeId",
+      "sectionId",
+      "enrollmentDate",
+      "status",
+      "isCurrent",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "gradeId",
+      "sectionId"
+    ]
+  },
+  "ExportJob": {
+    "paths": [
+      "schoolId",
+      "reportCode",
+      "module",
+      "exportFormat",
+      "filters",
+      "columns",
+      "status",
+      "fileKey",
+      "fileName",
+      "fileSize",
+      "downloadUrl",
+      "errorDetails",
+      "requestedBy",
+      "completedAt",
+      "expiresAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "reportCode",
+      "module"
+    ]
+  },
+  "FeeCategory": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "description",
+      "categoryType",
+      "sequence",
+      "status",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code"
+    ]
+  },
+  "FeeConcession": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "name",
+      "code",
+      "type",
+      "value",
+      "applicableFeeCategoryIds",
+      "maximumAmount",
+      "validFrom",
+      "validTo",
+      "reason",
+      "status",
+      "createdBy",
+      "approvedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "name",
+      "code",
+      "type",
+      "value",
+      "reason"
+    ]
+  },
+  "FeeFineRule": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "calculationType",
+      "value",
+      "graceDays",
+      "maximumAmount",
+      "applicableFeeCategoryIds",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code",
+      "value"
+    ]
+  },
+  "FeeStructure": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "name",
+      "code",
+      "description",
+      "applicableTo",
+      "gradeIds",
+      "sectionIds",
+      "effectiveFrom",
+      "effectiveTo",
+      "billingFrequency",
+      "status",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "name",
+      "code"
+    ]
+  },
+  "FeeStructureItem": {
+    "paths": [
+      "schoolId",
+      "feeStructureId",
+      "feeCategoryId",
+      "name",
+      "amount",
+      "frequency",
+      "isMandatory",
+      "isOptional",
+      "sequence",
+      "applicableMonths",
+      "fineEnabled",
+      "discountAllowed",
+      "concessionAllowed",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "feeStructureId",
+      "feeCategoryId",
+      "name",
+      "amount"
+    ]
+  },
+  "FinancialAdjustment": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "type",
+      "amount",
+      "reason",
+      "referenceType",
+      "referenceId",
+      "status",
+      "requestedBy",
+      "approvedBy",
+      "approvedAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "type",
+      "amount",
+      "reason"
+    ]
+  },
+  "GatePass": {
+    "paths": [
+      "schoolId",
+      "passNumber",
+      "type",
+      "requesterType",
+      "requesterId",
+      "studentId",
+      "enrollmentId",
+      "reason",
+      "destination",
+      "expectedReturn",
+      "approvedBy",
+      "approvedAt",
+      "issuedAt",
+      "returnedAt",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "passNumber",
+      "type",
+      "reason"
+    ]
+  },
+  "GoodsReceipt": {
+    "paths": [
+      "schoolId",
+      "purchaseOrderId",
+      "vendorId",
+      "warehouseId",
+      "receiptNumber",
+      "receivedDate",
+      "items",
+      "receivedBy",
+      "remarks",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "purchaseOrderId",
+      "vendorId",
+      "receiptNumber",
+      "receivedDate"
+    ]
+  },
+  "Grade": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "category",
+      "sequenceOrder",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code"
+    ]
+  },
+  "Guardian": {
+    "paths": [
+      "schoolId",
+      "name",
+      "relationship",
+      "phone",
+      "email",
+      "occupation",
+      "address",
+      "isPrimary",
+      "isEmergencyContact",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "relationship",
+      "phone"
+    ]
+  },
+  "Holiday": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "name",
+      "date",
+      "holidayType",
+      "description",
+      "applicableTo",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "date"
+    ]
+  },
+  "Hostel": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "code",
+      "name",
+      "type",
+      "gender",
+      "capacity",
+      "wardenStaffId",
+      "address",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name",
+      "capacity"
+    ]
+  },
+  "HostelAllocation": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "enrollmentId",
+      "academicYearId",
+      "hostelId",
+      "roomId",
+      "bedId",
+      "allocationDate",
+      "vacatedDate",
+      "status",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "enrollmentId",
+      "academicYearId",
+      "hostelId",
+      "roomId",
+      "bedId",
+      "allocationDate"
+    ]
+  },
+  "HostelAttendance": {
+    "paths": [
+      "schoolId",
+      "hostelId",
+      "date",
+      "studentId",
+      "allocationId",
+      "status",
+      "markedBy",
+      "markedAt",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "hostelId",
+      "date",
+      "studentId",
+      "allocationId",
+      "status"
+    ]
+  },
+  "HostelBed": {
+    "paths": [
+      "schoolId",
+      "roomId",
+      "bedNumber",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "roomId",
+      "bedNumber"
+    ]
+  },
+  "HostelBlock": {
+    "paths": [
+      "schoolId",
+      "hostelId",
+      "code",
+      "name",
+      "floors",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "hostelId",
+      "code",
+      "name"
+    ]
+  },
+  "HostelRoom": {
+    "paths": [
+      "schoolId",
+      "hostelId",
+      "blockId",
+      "roomNumber",
+      "floor",
+      "capacity",
+      "roomType",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "hostelId",
+      "roomNumber",
+      "capacity"
+    ]
+  },
+  "InventoryCategory": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "description",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name"
+    ]
+  },
+  "InventoryItem": {
+    "paths": [
+      "schoolId",
+      "categoryId",
+      "itemCode",
+      "name",
+      "description",
+      "unit",
+      "reorderLevel",
+      "reorderQuantity",
+      "trackSerialNumber",
+      "trackBatch",
+      "expiryTracking",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "categoryId",
+      "itemCode",
+      "name"
+    ]
+  },
+  "Invoice": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "invoiceNumber",
+      "invoiceDate",
+      "dueDate",
+      "billingPeriod",
+      "subtotal",
+      "discountAmount",
+      "concessionAmount",
+      "fineAmount",
+      "taxAmount",
+      "totalAmount",
+      "paidAmount",
+      "balanceAmount",
+      "status",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "invoiceNumber",
+      "invoiceDate",
+      "dueDate",
+      "billingPeriod",
+      "subtotal",
+      "totalAmount",
+      "balanceAmount"
+    ]
+  },
+  "InvoiceItem": {
+    "paths": [
+      "schoolId",
+      "invoiceId",
+      "feeCategoryId",
+      "feeStructureItemId",
+      "description",
+      "quantity",
+      "unitAmount",
+      "grossAmount",
+      "discountAmount",
+      "concessionAmount",
+      "fineAmount",
+      "netAmount",
+      "sequence",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "invoiceId",
+      "feeCategoryId",
+      "description",
+      "unitAmount",
+      "grossAmount",
+      "netAmount"
+    ]
+  },
+  "LeaveBalance": {
+    "paths": [
+      "schoolId",
+      "staffId",
+      "leaveTypeId",
+      "academicYearId",
+      "openingBalance",
+      "accrued",
+      "used",
+      "pending",
+      "adjusted",
+      "closingBalance",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "staffId",
+      "leaveTypeId",
+      "academicYearId"
+    ]
+  },
+  "LeaveRequest": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "fromDate",
+      "toDate",
+      "reason",
+      "status",
+      "requestedBy",
+      "approvedBy",
+      "approvedAt",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "academicYearId",
+      "fromDate",
+      "toDate",
+      "reason"
+    ]
+  },
+  "LeaveType": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "description",
+      "annualQuota",
+      "carryForwardAllowed",
+      "maxCarryForward",
+      "requiresDocument",
+      "requiresApproval",
+      "paid",
+      "halfDayAllowed",
+      "applicableCategories",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name",
+      "annualQuota"
+    ]
+  },
+  "Library": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "name",
+      "code",
+      "description",
+      "location",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code"
+    ]
+  },
+  "LibraryMember": {
+    "paths": [
+      "schoolId",
+      "memberType",
+      "studentId",
+      "staffId",
+      "membershipNumber",
+      "issueLimit",
+      "status",
+      "validFrom",
+      "validUntil",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "memberType",
+      "membershipNumber"
+    ]
+  },
+  "LibrarySetting": {
+    "paths": [
+      "schoolId",
+      "maximumBooks",
+      "defaultLoanPeriodDays",
+      "studentLoanPeriodDays",
+      "staffLoanPeriodDays",
+      "finePerDay",
+      "maximumFine",
+      "gracePeriodDays",
+      "renewalLimit",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId"
+    ]
+  },
+  "MedicalVisit": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "visitDate",
+      "reason",
+      "symptoms",
+      "observation",
+      "actionTaken",
+      "referredTo",
+      "documentId",
+      "recordedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "visitDate",
+      "reason"
+    ]
+  },
+  "Message": {
+    "paths": [
+      "schoolId",
+      "conversationId",
+      "senderUserId",
+      "recipientUserId",
+      "content",
+      "status",
+      "readAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "conversationId",
+      "senderUserId",
+      "recipientUserId",
+      "content"
+    ]
+  },
+  "MobileDevice": {
+    "paths": [
+      "schoolId",
+      "userId",
+      "deviceId",
+      "platform",
+      "pushToken",
+      "appVersion",
+      "deviceName",
+      "lastSeenAt",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "userId",
+      "deviceId"
+    ]
+  },
+  "Notification": {
+    "paths": [
+      "schoolId",
+      "recipientUserId",
+      "recipientType",
+      "category",
+      "title",
+      "message",
+      "entityType",
+      "entityId",
+      "actionUrl",
+      "priority",
+      "channel",
+      "status",
+      "readAt",
+      "deliveredAt",
+      "expiresAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "recipientUserId",
+      "recipientType",
+      "title",
+      "message"
+    ]
+  },
+  "NotificationPreference": {
+    "paths": [
+      "schoolId",
+      "userId",
+      "preferences",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "userId"
+    ]
+  },
+  "NotificationTemplate": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "category",
+      "channel",
+      "subject",
+      "body",
+      "variables",
+      "status",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code",
+      "category",
+      "body"
+    ]
+  },
+  "Payment": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "paymentNumber",
+      "paymentDate",
+      "amount",
+      "currency",
+      "paymentMethod",
+      "referenceNumber",
+      "gatewayTransactionId",
+      "status",
+      "receivedBy",
+      "notes",
+      "idempotencyKey",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "paymentNumber",
+      "paymentDate",
+      "amount",
+      "idempotencyKey"
+    ]
+  },
+  "PaymentAllocation": {
+    "paths": [
+      "schoolId",
+      "paymentId",
+      "invoiceId",
+      "studentId",
+      "allocatedAmount",
+      "allocationDate",
+      "allocatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "paymentId",
+      "invoiceId",
+      "studentId",
+      "allocatedAmount"
+    ]
+  },
+  "PayrollAdjustment": {
+    "paths": [
+      "schoolId",
+      "payrollPeriodId",
+      "staffId",
+      "amount",
+      "type",
+      "reason",
+      "approvedBy",
+      "createdBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "payrollPeriodId",
+      "staffId",
+      "amount",
+      "type",
+      "reason"
+    ]
+  },
+  "PayrollEntry": {
+    "paths": [
+      "schoolId",
+      "payrollPeriodId",
+      "staffId",
+      "workingDays",
+      "paidDays",
+      "unpaidDays",
+      "overtimeHours",
+      "earnings",
+      "deductions",
+      "employerContributions",
+      "grossAmount",
+      "netAmount",
+      "status",
+      "calculationSnapshot",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "payrollPeriodId",
+      "staffId",
+      "grossAmount",
+      "netAmount"
+    ]
+  },
+  "PayrollPeriod": {
+    "paths": [
+      "schoolId",
+      "year",
+      "month",
+      "startDate",
+      "endDate",
+      "status",
+      "processedAt",
+      "lockedAt",
+      "processedBy",
+      "lockedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "year",
+      "month",
+      "startDate",
+      "endDate"
+    ]
+  },
+  "Payslip": {
+    "paths": [
+      "schoolId",
+      "payrollPeriodId",
+      "staffId",
+      "employeeNumber",
+      "salarySnapshot",
+      "earningsSnapshot",
+      "deductionSnapshot",
+      "grossAmount",
+      "netAmount",
+      "generatedAt",
+      "publishedAt",
+      "status",
+      "documentId",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "payrollPeriodId",
+      "staffId"
+    ]
+  },
+  "Period": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "sequence",
+      "startTime",
+      "endTime",
+      "durationMinutes",
+      "isBreak",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code",
+      "sequence",
+      "startTime",
+      "endTime"
+    ]
+  },
+  "Permission": {
+    "paths": [
+      "module",
+      "action",
+      "code",
+      "name",
+      "description",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "module",
+      "action",
+      "code",
+      "name"
+    ]
+  },
+  "Plan": {
+    "paths": [
+      "code",
+      "name",
+      "description",
+      "tier",
+      "pricing.monthly",
+      "pricing.annual",
+      "pricing.currency",
+      "trialDays",
+      "features",
+      "limits.students",
+      "limits.staff",
+      "limits.storage_gb",
+      "limits.api_requests_per_day",
+      "limits.campuses",
+      "limits.users",
+      "isPublic",
+      "isCustom",
+      "status",
+      "sortOrder",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "code",
+      "name"
+    ]
+  },
+  "PlatformAdmin": {
+    "paths": [
+      "userId",
+      "email",
+      "firstName",
+      "lastName",
+      "role",
+      "permissions",
+      "isActive",
+      "lastLoginAt",
+      "mfaEnabled",
+      "mfaSecret",
+      "createdBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "userId",
+      "email",
+      "firstName",
+      "lastName"
+    ]
+  },
+  "PlatformInvoice": {
+    "paths": [
+      "schoolId",
+      "subscriptionId",
+      "invoiceNumber",
+      "status",
+      "billingPeriod.start",
+      "billingPeriod.end",
+      "lineItems",
+      "subtotal",
+      "taxRate",
+      "taxAmount",
+      "discountAmount",
+      "total",
+      "currency",
+      "dueDate",
+      "paidAt",
+      "paymentMethod",
+      "paymentReference",
+      "pdfUrl",
+      "notes",
+      "metadata",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "subscriptionId",
+      "invoiceNumber",
+      "subtotal",
+      "total"
+    ]
+  },
+  "Publisher": {
+    "paths": [
+      "schoolId",
+      "name",
+      "contactPerson",
+      "email",
+      "phone",
+      "address",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name"
+    ]
+  },
+  "PurchaseOrder": {
+    "paths": [
+      "schoolId",
+      "vendorId",
+      "purchaseRequestId",
+      "orderNumber",
+      "orderDate",
+      "expectedDeliveryDate",
+      "items",
+      "subtotal",
+      "tax",
+      "discount",
+      "total",
+      "paymentTerms",
+      "status",
+      "approvedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "vendorId",
+      "orderNumber",
+      "orderDate",
+      "subtotal",
+      "total"
+    ]
+  },
+  "PurchaseRequest": {
+    "paths": [
+      "schoolId",
+      "requestCode",
+      "requestedBy",
+      "departmentId",
+      "items",
+      "requiredDate",
+      "priority",
+      "reason",
+      "status",
+      "approvedBy",
+      "approvedAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "requestCode",
+      "requestedBy"
+    ]
+  },
+  "Receipt": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "paymentId",
+      "receiptNumber",
+      "receiptDate",
+      "amount",
+      "paymentMethod",
+      "referenceNumber",
+      "allocatedInvoices",
+      "status",
+      "generatedAt",
+      "generatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "paymentId",
+      "receiptNumber",
+      "amount",
+      "paymentMethod"
+    ]
+  },
+  "Refund": {
+    "paths": [
+      "schoolId",
+      "paymentId",
+      "studentId",
+      "refundNumber",
+      "refundAmount",
+      "refundDate",
+      "refundMethod",
+      "reason",
+      "status",
+      "requestedBy",
+      "approvedBy",
+      "approvedAt",
+      "processedBy",
+      "processedAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "paymentId",
+      "studentId",
+      "refundNumber",
+      "refundAmount",
+      "reason"
+    ]
+  },
+  "ReportDefinition": {
+    "paths": [
+      "schoolId",
+      "reportCode",
+      "name",
+      "description",
+      "module",
+      "category",
+      "filters",
+      "columns",
+      "defaultSort.field",
+      "defaultSort.order",
+      "permissions",
+      "exportFormats",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "reportCode",
+      "name",
+      "module"
+    ]
+  },
+  "ReportSchedule": {
+    "paths": [
+      "schoolId",
+      "reportId",
+      "reportCode",
+      "name",
+      "frequency",
+      "recipients",
+      "filters",
+      "exportFormat",
+      "nextRunAt",
+      "lastRunAt",
+      "status",
+      "createdBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "reportId",
+      "reportCode",
+      "name",
+      "frequency",
+      "nextRunAt"
+    ]
+  },
+  "Role": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "description",
+      "hierarchyLevel",
+      "isSystem",
+      "status",
+      "permissions",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "name",
+      "code",
+      "hierarchyLevel"
+    ]
+  },
+  "RouteStop": {
+    "paths": [
+      "schoolId",
+      "routeId",
+      "stopCode",
+      "stopName",
+      "address",
+      "latitude",
+      "longitude",
+      "sequence",
+      "estimatedArrivalTime",
+      "estimatedDepartureTime",
+      "landmark",
+      "monthlyFare",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "routeId",
+      "stopCode",
+      "stopName",
+      "sequence"
+    ]
+  },
+  "SalaryComponent": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "type",
+      "calculationType",
+      "value",
+      "percentageOf",
+      "taxable",
+      "affectsGross",
+      "affectsNet",
+      "recurring",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name",
+      "type",
+      "calculationType"
+    ]
+  },
+  "SalaryStructure": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "effectiveFrom",
+      "effectiveTo",
+      "components",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name",
+      "effectiveFrom"
+    ]
+  },
+  "School": {
+    "paths": [
+      "tenantId",
+      "name",
+      "code",
+      "address",
+      "phone",
+      "email",
+      "website",
+      "logo",
+      "timezone",
+      "currency",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "name",
+      "code"
+    ]
+  },
+  "Section": {
+    "paths": [
+      "schoolId",
+      "gradeId",
+      "name",
+      "code",
+      "capacity",
+      "room",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "gradeId",
+      "name",
+      "code"
+    ]
+  },
+  "Setting": {
+    "paths": [
+      "schoolId",
+      "category",
+      "key",
+      "value",
+      "description",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "category",
+      "key",
+      "value"
+    ]
+  },
+  "Shift": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "startTime",
+      "endTime",
+      "graceMinutes",
+      "minimumWorkingMinutes",
+      "overtimeAllowed",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name",
+      "startTime",
+      "endTime"
+    ]
+  },
+  "Staff": {
+    "paths": [
+      "schoolId",
+      "userId",
+      "employeeId",
+      "firstName",
+      "lastName",
+      "email",
+      "phone",
+      "designation",
+      "department",
+      "joiningDate",
+      "qualification",
+      "experienceYears",
+      "isTeachingStaff",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "userId",
+      "employeeId",
+      "designation"
+    ]
+  },
+  "StaffAttendance": {
+    "paths": [
+      "schoolId",
+      "staffId",
+      "date",
+      "shiftId",
+      "checkIn",
+      "checkOut",
+      "attendanceStatus",
+      "lateMinutes",
+      "earlyLeaveMinutes",
+      "overtimeMinutes",
+      "remarks",
+      "source",
+      "markedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "staffId",
+      "date",
+      "attendanceStatus"
+    ]
+  },
+  "StaffLeaveRequest": {
+    "paths": [
+      "schoolId",
+      "staffId",
+      "leaveTypeId",
+      "startDate",
+      "endDate",
+      "numberOfDays",
+      "halfDay",
+      "reason",
+      "attachmentId",
+      "status",
+      "submittedAt",
+      "approvedBy",
+      "approvedAt",
+      "rejectionReason",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "staffId",
+      "leaveTypeId",
+      "startDate",
+      "endDate",
+      "numberOfDays",
+      "reason"
+    ]
+  },
+  "Stock": {
+    "paths": [
+      "schoolId",
+      "warehouseId",
+      "itemId",
+      "quantity",
+      "reservedQuantity",
+      "availableQuantity",
+      "reorderLevel",
+      "lastUpdatedAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "warehouseId",
+      "itemId"
+    ]
+  },
+  "StockMovement": {
+    "paths": [
+      "schoolId",
+      "warehouseId",
+      "itemId",
+      "movementType",
+      "quantity",
+      "unitCost",
+      "referenceType",
+      "referenceId",
+      "batchNumber",
+      "serialNumber",
+      "expiryDate",
+      "performedBy",
+      "reason",
+      "timestamp",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "warehouseId",
+      "itemId",
+      "movementType",
+      "quantity"
+    ]
+  },
+  "Student": {
+    "paths": [
+      "schoolId",
+      "studentNumber",
+      "admissionNumber",
+      "firstName",
+      "middleName",
+      "lastName",
+      "dob",
+      "gender",
+      "bloodGroup",
+      "nationality",
+      "email",
+      "phone",
+      "address.street",
+      "address.city",
+      "address.state",
+      "address.postalCode",
+      "address.country",
+      "photo",
+      "status",
+      "admissionDate",
+      "previousSchool",
+      "emergencyContact.name",
+      "emergencyContact.relationship",
+      "emergencyContact.phone",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentNumber",
+      "admissionNumber",
+      "firstName",
+      "lastName",
+      "dob",
+      "gender"
+    ]
+  },
+  "StudentDocument": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "admissionId",
+      "documentType",
+      "title",
+      "fileName",
+      "fileUrl",
+      "fileSize",
+      "mimeType",
+      "uploadedAt",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "documentType",
+      "title",
+      "fileName",
+      "fileUrl"
+    ]
+  },
+  "StudentFeeAssignment": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "feeStructureId",
+      "assignedItems",
+      "effectiveFrom",
+      "effectiveTo",
+      "status",
+      "assignedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "feeStructureId"
+    ]
+  },
+  "StudentGuardian": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "guardianId",
+      "relationship",
+      "isPrimary",
+      "isEmergencyContact",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "guardianId",
+      "relationship"
+    ]
+  },
+  "StudentHealthProfile": {
+    "paths": [
+      "schoolId",
+      "studentId",
+      "bloodGroup",
+      "allergies",
+      "chronicConditions",
+      "emergencyNotes",
+      "medicalAlerts",
+      "doctorName",
+      "doctorPhone",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId"
+    ]
+  },
+  "StudentLedger": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "referenceType",
+      "referenceId",
+      "transactionType",
+      "debit",
+      "credit",
+      "balance",
+      "description",
+      "transactionDate",
+      "createdBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "studentId",
+      "referenceType",
+      "referenceId",
+      "transactionType",
+      "balance"
+    ]
+  },
+  "Subject": {
+    "paths": [
+      "schoolId",
+      "name",
+      "code",
+      "shortName",
+      "type",
+      "description",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "code"
+    ]
+  },
+  "Subscription": {
+    "paths": [
+      "schoolId",
+      "planId",
+      "planCode",
+      "planSnapshot",
+      "status",
+      "billingCycle",
+      "trialStartDate",
+      "trialEndDate",
+      "currentPeriodStart",
+      "currentPeriodEnd",
+      "cancelledAt",
+      "cancelReason",
+      "suspendedAt",
+      "suspendReason",
+      "gracePeriodEndsAt",
+      "customLimits.students",
+      "customLimits.staff",
+      "customLimits.storage_gb",
+      "customLimits.api_requests_per_day",
+      "customLimits.campuses",
+      "customLimits.users",
+      "addOns",
+      "couponCode",
+      "discountPercent",
+      "notes",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "planId",
+      "planCode"
+    ]
+  },
+  "SubscriptionEvent": {
+    "paths": [
+      "schoolId",
+      "subscriptionId",
+      "eventType",
+      "oldStatus",
+      "newStatus",
+      "metadata",
+      "performedBy",
+      "note",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "subscriptionId",
+      "eventType"
+    ]
+  },
+  "SyncRecord": {
+    "paths": [
+      "schoolId",
+      "userId",
+      "idempotencyKey",
+      "entityType",
+      "operation",
+      "entityId",
+      "status",
+      "clientTimestamp",
+      "responsePayload",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "userId",
+      "idempotencyKey",
+      "entityType",
+      "operation"
+    ]
+  },
+  "TeacherAssignment": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "staffId",
+      "gradeId",
+      "sectionId",
+      "subjectId",
+      "isClassTeacher",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "staffId",
+      "gradeId",
+      "sectionId",
+      "subjectId"
+    ]
+  },
+  "Timetable": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "campusId",
+      "gradeId",
+      "sectionId",
+      "dayOfWeek",
+      "periodId",
+      "subjectId",
+      "teacherId",
+      "roomNumber",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "gradeId",
+      "sectionId",
+      "dayOfWeek",
+      "periodId",
+      "subjectId",
+      "teacherId"
+    ]
+  },
+  "TransportAssignment": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "routeId",
+      "routeStopId",
+      "vehicleId",
+      "pickupRequired",
+      "dropRequired",
+      "effectiveFrom",
+      "effectiveTo",
+      "status",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "studentId",
+      "enrollmentId",
+      "routeId",
+      "routeStopId",
+      "effectiveFrom"
+    ]
+  },
+  "TransportAttendance": {
+    "paths": [
+      "schoolId",
+      "academicYearId",
+      "date",
+      "routeId",
+      "vehicleId",
+      "studentId",
+      "assignmentId",
+      "tripType",
+      "status",
+      "markedAt",
+      "markedBy",
+      "remarks",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "date",
+      "routeId",
+      "studentId",
+      "assignmentId",
+      "tripType"
+    ]
+  },
+  "TransportRoute": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "academicYearId",
+      "routeCode",
+      "routeName",
+      "description",
+      "direction",
+      "estimatedDurationMinutes",
+      "assignedVehicleId",
+      "assignedDriverId",
+      "status",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "academicYearId",
+      "routeCode",
+      "routeName"
+    ]
+  },
+  "UsageRecord": {
+    "paths": [
+      "schoolId",
+      "subscriptionId",
+      "metric",
+      "value",
+      "period",
+      "date",
+      "recordedAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "metric",
+      "value",
+      "period"
+    ]
+  },
+  "User": {
+    "paths": [
+      "schoolId",
+      "roleId",
+      "email",
+      "password",
+      "name",
+      "phone",
+      "avatar",
+      "status",
+      "lastLoginAt",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "roleId",
+      "email",
+      "password",
+      "name"
+    ]
+  },
+  "Vehicle": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "vehicleNumber",
+      "registrationNumber",
+      "vehicleType",
+      "make",
+      "model",
+      "capacity",
+      "manufactureYear",
+      "insuranceNumber",
+      "insuranceExpiryDate",
+      "permitNumber",
+      "permitExpiryDate",
+      "fitnessCertificateNumber",
+      "fitnessExpiryDate",
+      "pollutionCertificateNumber",
+      "pollutionExpiryDate",
+      "gpsDeviceId",
+      "status",
+      "notes",
+      "createdBy",
+      "updatedBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "vehicleNumber",
+      "registrationNumber",
+      "capacity"
+    ]
+  },
+  "Vendor": {
+    "paths": [
+      "schoolId",
+      "vendorCode",
+      "name",
+      "contactPerson",
+      "phone",
+      "email",
+      "address",
+      "taxIdentifier",
+      "category",
+      "paymentTerms",
+      "status",
+      "notes",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "vendorCode",
+      "name"
+    ]
+  },
+  "Visitor": {
+    "paths": [
+      "schoolId",
+      "passNumber",
+      "name",
+      "phone",
+      "email",
+      "idType",
+      "idReference",
+      "photoUrl",
+      "purpose",
+      "hostType",
+      "hostId",
+      "hostName",
+      "visitDate",
+      "expectedArrival",
+      "expectedDeparture",
+      "actualCheckIn",
+      "actualCheckOut",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "passNumber",
+      "name",
+      "phone",
+      "purpose",
+      "visitDate"
+    ]
+  },
+  "VisitorAppointment": {
+    "paths": [
+      "schoolId",
+      "visitorId",
+      "visitorName",
+      "visitorPhone",
+      "appointmentDate",
+      "purpose",
+      "hostStaffId",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "appointmentDate",
+      "hostStaffId"
+    ]
+  },
+  "Warehouse": {
+    "paths": [
+      "schoolId",
+      "campusId",
+      "code",
+      "name",
+      "location",
+      "managerStaffId",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name"
+    ]
+  },
+  "Webhook": {
+    "paths": [
+      "schoolId",
+      "name",
+      "url",
+      "secret",
+      "events",
+      "isActive",
+      "status",
+      "headers",
+      "retryCount",
+      "timeoutMs",
+      "lastDeliveryAt",
+      "lastDeliveryStatus",
+      "failureCount",
+      "createdBy",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "name",
+      "url",
+      "secret"
+    ]
+  },
+  "WebhookDelivery": {
+    "paths": [
+      "schoolId",
+      "webhookId",
+      "eventType",
+      "eventId",
+      "payload",
+      "status",
+      "responseStatus",
+      "responseBody",
+      "attemptCount",
+      "maxAttempts",
+      "nextRetryAt",
+      "lastAttemptAt",
+      "deliveredAt",
+      "duration",
+      "error",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "webhookId",
+      "eventType",
+      "eventId"
+    ]
+  },
+  "WorkflowDefinition": {
+    "paths": [
+      "schoolId",
+      "code",
+      "name",
+      "entityType",
+      "steps",
+      "status",
+      "createdAt",
+      "updatedAt"
+    ],
+    "required": [
+      "schoolId",
+      "code",
+      "name",
+      "entityType"
+    ]
+  }
+}
