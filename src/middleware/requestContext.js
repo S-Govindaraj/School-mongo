@@ -58,6 +58,58 @@ const errorHandlerMiddleware = (err, req, res, next) => {
     queryParameters: redactSensitiveData(req.query),
   });
 
+  // Automatically record to ErrorLog for Error Monitoring
+  try {
+    const ErrorLog = require('../models/ErrorLog');
+    const { computeFingerprint, classifySeverity } = require('../utils/errorFingerprint');
+
+    const fingerprint = computeFingerprint({
+      errorType: err.name || 'Error',
+      message: message || 'Unknown error',
+      route: req.route?.path || req.originalUrl || '',
+      method: req.method || 'GET',
+      stack: err.stack || '',
+    });
+
+    const severity = classifySeverity({
+      statusCode,
+      errorType: err.name || 'Error',
+      endpoint: req.originalUrl || '',
+      isUncaught: statusCode >= 500,
+    });
+
+    ErrorLog.create({
+      schoolId: req.schoolContext?.schoolId || null,
+      schoolName: req.schoolContext?.schoolName || 'School ERP',
+      fingerprint,
+      source: 'backend',
+      userId: req.user?._id || null,
+      userName: req.user?.name || '',
+      email: req.user?.email || '',
+      role: req.user?.role?.name || req.user?.role || '',
+      requestId: req.requestId || '',
+      method: req.method || 'GET',
+      endpoint: req.originalUrl || '',
+      route: req.route?.path || '',
+      statusCode,
+      payload: redactSensitiveData(req.body),
+      query: redactSensitiveData(req.query),
+      params: redactSensitiveData(req.params),
+      ipAddress: req.ip || '',
+      errorType: err.name || 'Error',
+      errorCode,
+      message,
+      stack: err.stack || '',
+      severity,
+      app: {
+        environment: process.env.NODE_ENV || 'production',
+        version: '1.0.0',
+      },
+    }).catch((e) => logger.warn(`Failed to persist ErrorLog: ${e.message}`));
+  } catch (logErr) {
+    // Non-blocking
+  }
+
   return errorResponse(res, message, statusCode, errorCode, errors);
 };
 

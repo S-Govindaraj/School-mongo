@@ -2,7 +2,7 @@ const SyncRecord = require('../models/SyncRecord');
 const AttendanceSession = require('../models/AttendanceSession');
 const AttendanceRecord = require('../models/AttendanceRecord');
 const Student = require('../models/Student');
-const StaffLeaveRequest = require('../models/StaffLeaveRequest');
+const LeaveRequest = require('../models/LeaveRequest');
 const Visitor = require('../models/Visitor');
 const { logAuditEvent } = require('../middleware/auditLogger');
 const { ValidationError } = require('../utils/errors');
@@ -179,13 +179,13 @@ class SyncService {
   }
 
   async handleLeaveSync({ schoolId, userId, payload }) {
-    return await StaffLeaveRequest.create({
+    return await LeaveRequest.create({
       schoolId,
-      staffId: payload.staffId || userId,
-      leaveTypeId: payload.leaveTypeId,
-      startDate: payload.startDate,
-      endDate: payload.endDate,
-      reason: payload.reason,
+      studentId: payload.studentId || userId,
+      academicYearId: payload.academicYearId,
+      fromDate: payload.fromDate || payload.startDate,
+      toDate: payload.toDate || payload.endDate,
+      reason: payload.reason || 'Leave requested',
       status: 'PENDING'
     });
   }

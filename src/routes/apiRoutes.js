@@ -407,75 +407,13 @@ router.get('/exports/download-file', requirePermissions('export_download'), expo
 router.get('/search', requirePermissions('school_view'), searchController.globalSearch);
 
 // ================================================================
-// PHASE 8 — HRMS, PAYROLL, HOSTEL, INVENTORY, ASSETS, VISITORS
 // ================================================================
-const departmentController = require('../controllers/departmentController');
-const designationController = require('../controllers/designationController');
-const employmentProfileController = require('../controllers/employmentProfileController');
-const staffAttendanceController = require('../controllers/staffAttendanceController');
-const staffLeaveController = require('../controllers/staffLeaveController');
-const payrollController = require('../controllers/payrollController');
+// PHASE 8 — CAMPUS OPERATIONS: HOSTEL, INVENTORY, ASSETS, VISITORS
+// ================================================================
 const hostelController = require('../controllers/hostelController');
 const inventoryController = require('../controllers/inventoryController');
 const assetController = require('../controllers/assetController');
 const visitorController = require('../controllers/visitorController');
-
-// --- Phase 8: Departments ---
-router.get('/hr/departments', requirePermissions('department_view'), departmentController.list);
-router.get('/hr/departments/:id', requirePermissions('department_view'), departmentController.getOne);
-router.post('/hr/departments', requirePermissions('department_manage'), departmentController.create);
-router.put('/hr/departments/:id', requirePermissions('department_manage'), departmentController.update);
-router.delete('/hr/departments/:id', requirePermissions('department_manage'), departmentController.remove);
-
-// --- Phase 8: Designations ---
-router.get('/hr/designations', requirePermissions('designation_view'), designationController.list);
-router.get('/hr/designations/:id', requirePermissions('designation_view'), designationController.getOne);
-router.post('/hr/designations', requirePermissions('designation_manage'), designationController.create);
-router.put('/hr/designations/:id', requirePermissions('designation_manage'), designationController.update);
-router.delete('/hr/designations/:id', requirePermissions('designation_manage'), designationController.remove);
-
-// --- Phase 8: Employment Profiles ---
-router.get('/hr/employment-profiles', requirePermissions('employment_profile_view'), employmentProfileController.list);
-router.get('/hr/employment-profiles/:id', requirePermissions('employment_profile_view'), employmentProfileController.getOne);
-router.get('/hr/employment-profiles/by-staff/:staffId', requirePermissions('employment_profile_view'), employmentProfileController.getByStaff);
-router.post('/hr/employment-profiles', requirePermissions('employment_profile_manage'), employmentProfileController.create);
-router.put('/hr/employment-profiles/:id', requirePermissions('employment_profile_manage'), employmentProfileController.update);
-
-// --- Phase 8: Staff Attendance ---
-router.get('/hr/staff-attendance', requirePermissions('staff_attendance_view'), staffAttendanceController.list);
-router.post('/hr/staff-attendance', requirePermissions('staff_attendance_mark'), staffAttendanceController.markAttendance);
-router.post('/hr/staff-attendance/bulk', requirePermissions('staff_attendance_mark'), staffAttendanceController.bulkMark);
-router.get('/hr/staff-attendance/:staffId/summary', requirePermissions('staff_attendance_view'), staffAttendanceController.getStaffSummary);
-
-// --- Phase 8: Staff Leave Management ---
-router.get('/hr/leave-types', requirePermissions('leave_type_view'), staffLeaveController.listLeaveTypes);
-router.post('/hr/leave-types', requirePermissions('leave_type_manage'), staffLeaveController.createLeaveType);
-router.put('/hr/leave-types/:id', requirePermissions('leave_type_manage'), staffLeaveController.updateLeaveType);
-
-router.get('/hr/leave-balances', requirePermissions('leave_balance_view'), staffLeaveController.getBalances);
-router.post('/hr/leave-balances/credit', requirePermissions('leave_balance_manage'), staffLeaveController.creditLeaveBalance);
-
-router.get('/hr/staff-leaves', requirePermissions('staff_leave_view'), staffLeaveController.listRequests);
-router.post('/hr/staff-leaves', requirePermissions('staff_leave_apply'), staffLeaveController.submitRequest);
-router.patch('/hr/staff-leaves/:id/review', requirePermissions('staff_leave_approve'), staffLeaveController.reviewRequest);
-
-// --- Phase 8: Payroll ---
-router.get('/hr/payroll/components', requirePermissions('payroll_view'), payrollController.listComponents);
-router.post('/hr/payroll/components', requirePermissions('payroll_manage'), payrollController.createComponent);
-router.put('/hr/payroll/components/:id', requirePermissions('payroll_manage'), payrollController.updateComponent);
-
-router.get('/hr/payroll/structures', requirePermissions('payroll_view'), payrollController.listStructures);
-router.post('/hr/payroll/structures', requirePermissions('payroll_manage'), payrollController.createStructure);
-
-router.post('/hr/payroll/assign-salary', requirePermissions('payroll_manage'), payrollController.assignSalary);
-
-router.get('/hr/payroll/periods', requirePermissions('payroll_view'), payrollController.listPeriods);
-router.post('/hr/payroll/periods', requirePermissions('payroll_manage'), payrollController.createPeriod);
-router.post('/hr/payroll/periods/:periodId/process', requirePermissions('payroll_process'), payrollController.processPayroll);
-router.post('/hr/payroll/periods/:periodId/lock', requirePermissions('payroll_lock'), payrollController.lockPeriod);
-
-router.get('/hr/payroll/payslips/:staffId', requirePermissions('payslip_view'), payrollController.getPayslips);
-router.post('/hr/payroll/adjustments', requirePermissions('payroll_manage'), payrollController.createAdjustment);
 
 // --- Phase 8: Hostel Management ---
 router.get('/hostel/hostels', requirePermissions('hostel_view'), hostelController.listHostels);
@@ -578,6 +516,15 @@ router.get('/mobile/devices', syncController.getDevices);
 router.delete('/mobile/devices/:id', syncController.revokeDevice);
 router.get('/mobile/dashboard', syncController.getMobileDashboard);
 router.get('/mobile/config', syncController.getMobileConfig);
+
+// --- Error Monitoring Module ---
+const errorLogController = require('../controllers/errorLogController');
+
+router.get('/error-logs/stats', requirePermissions('audit_view'), errorLogController.getErrorLogStats);
+router.get('/error-logs/group/:fingerprint', requirePermissions('audit_view'), errorLogController.getErrorLogGroup);
+router.patch('/error-logs/group/:fingerprint/status', requirePermissions('audit_manage'), errorLogController.updateErrorLogGroupStatus);
+router.get('/error-logs', requirePermissions('audit_view'), errorLogController.getErrorLogs);
+router.post('/error-logs/client', errorLogController.recordClientError);
 
 module.exports = router;
 
