@@ -79,18 +79,18 @@ const errorHandlerMiddleware = (err, req, res, next) => {
     });
 
     ErrorLog.create({
-      schoolId: req.schoolContext?.schoolId || null,
-      schoolName: req.schoolContext?.schoolName || 'School ERP',
+      schoolId: req.schoolContext?.schoolId || req.user?.schoolId?._id || req.user?.schoolId || null,
+      schoolName: req.schoolContext?.schoolName || req.user?.schoolId?.name || 'School ERP',
       fingerprint,
       source: 'backend',
-      userId: req.user?._id || null,
+      userId: req.user?._id || req.user?.id || null,
       userName: req.user?.name || '',
       email: req.user?.email || '',
       role: req.user?.role?.name || req.user?.role || '',
       requestId: req.requestId || '',
       method: req.method || 'GET',
       endpoint: req.originalUrl || '',
-      route: req.route?.path || '',
+      route: req.route?.path || req.originalUrl || '',
       statusCode,
       payload: redactSensitiveData(req.body),
       query: redactSensitiveData(req.query),

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requirePermissions } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate, requirePermissions } = require('../middleware/auth');
 const validate = require('../shared/validation/validate');
 const {
   schoolProfileSchema,
@@ -72,8 +72,12 @@ const refundController = require('../controllers/refundController');
 const ledgerController = require('../controllers/ledgerController');
 const financialAdjustmentController = require('../controllers/financialAdjustmentController');
 const financeDashboardController = require('../controllers/financeDashboardController');
+const errorLogController = require('../controllers/errorLogController');
 
-// All API routes require authentication
+// Client-side error reporting (accepts optional auth so pre-login & unhandled frontend errors are captured)
+router.post('/error-logs/client', optionalAuthenticate, errorLogController.recordClientError);
+
+// All other API routes require authentication
 router.use(authenticate);
 
 // --- School & Campus Routes ---
@@ -128,6 +132,7 @@ router.get('/staff', requirePermissions('staff_view'), staffController.getStaff)
 router.get('/staff/:id', requirePermissions('staff_view'), staffController.getStaffById);
 router.post('/staff', requirePermissions('staff_manage'), validate(staffSchema), staffController.createStaff);
 router.patch('/staff/:id', requirePermissions('staff_manage'), validate(updateStaffSchema), staffController.updateStaff);
+router.delete('/staff/:id', requirePermissions('staff_manage'), staffController.deleteStaff);
 
 // --- Teacher Assignments ---
 router.get('/teacher-assignments', requirePermissions('teacher_assignment_view'), teacherAssignmentController.getTeacherAssignments);
@@ -154,6 +159,7 @@ router.get('/admissions', requirePermissions('admission_view'), admissionControl
 router.get('/admissions/:id', requirePermissions('admission_view'), admissionController.getAdmissionById);
 router.post('/admissions', requirePermissions('admission_create'), validate(admissionSchema), admissionController.createAdmission);
 router.patch('/admissions/:id/status', requirePermissions('admission_status_change'), validate(updateAdmissionStatusSchema), admissionController.updateAdmissionStatus);
+router.post('/admissions/:id/admit', requirePermissions('admission_status_change'), admissionController.admitStudent);
 
 // --- Enrollments ---
 router.get('/enrollments', requirePermissions('enrollment_view'), enrollmentController.getEnrollments);
@@ -315,6 +321,9 @@ router.patch('/notification-preferences', requirePermissions('notification_prefe
 
 // Communication Center Analytics & Templates
 router.get('/communication/analytics', requirePermissions('communication_dashboard_view'), communicationCenterController.getCommunicationAnalytics);
+router.get('/communication/templates', requirePermissions('communication_dashboard_view'), communicationCenterController.getNotificationTemplates);
+router.post('/communication/templates', requirePermissions('communication_dashboard_view'), communicationCenterController.createNotificationTemplate);
+router.post('/communication/send-message', requirePermissions('communication_dashboard_view'), communicationCenterController.sendMessage);
 // Phase 7 Controllers
 const transportController = require('../controllers/transportController');
 const libraryController = require('../controllers/libraryController');
@@ -518,13 +527,10 @@ router.get('/mobile/dashboard', syncController.getMobileDashboard);
 router.get('/mobile/config', syncController.getMobileConfig);
 
 // --- Error Monitoring Module ---
-const errorLogController = require('../controllers/errorLogController');
-
 router.get('/error-logs/stats', requirePermissions('audit_view'), errorLogController.getErrorLogStats);
 router.get('/error-logs/group/:fingerprint', requirePermissions('audit_view'), errorLogController.getErrorLogGroup);
 router.patch('/error-logs/group/:fingerprint/status', requirePermissions('audit_manage'), errorLogController.updateErrorLogGroupStatus);
 router.get('/error-logs', requirePermissions('audit_view'), errorLogController.getErrorLogs);
-router.post('/error-logs/client', errorLogController.recordClientError);
 
 module.exports = router;
 

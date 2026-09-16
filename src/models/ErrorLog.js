@@ -140,7 +140,15 @@ ErrorLogSchema.statics.getPlatformStats = function () {
 };
 
 ErrorLogSchema.statics.getScopedStats = function (schoolId) {
-  const match = schoolId ? { schoolId: new mongoose.Types.ObjectId(schoolId) } : {};
+  const match = schoolId
+    ? {
+        $or: [
+          { schoolId: new mongoose.Types.ObjectId(schoolId) },
+          { schoolId: null },
+          { schoolId: { $exists: false } },
+        ],
+      }
+    : {};
   return this.aggregate([
     { $match: match },
     {

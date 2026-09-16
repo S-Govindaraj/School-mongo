@@ -45,6 +45,16 @@ const createAcademicYear = async (req, res, next) => {
       throw new ValidationError('Start date must be before end date.');
     }
 
+    const trimmedCode = String(code || '').trim();
+    const existing = await AcademicYear.findOne({
+      schoolId,
+      code: trimmedCode,
+      status: { $ne: 'ARCHIVED' },
+    });
+    if (existing) {
+      throw new ValidationError(`Academic year with code "${trimmedCode}" already exists in this school.`);
+    }
+
     if (isCurrent) {
       await AcademicYear.updateMany({ schoolId }, { isCurrent: false });
     }
@@ -93,6 +103,19 @@ const updateAcademicYear = async (req, res, next) => {
 
     if (req.body.isCurrent && !year.isCurrent) {
       await AcademicYear.updateMany({ schoolId }, { isCurrent: false });
+    }
+
+    if (req.body.code && String(req.body.code).trim() !== year.code) {
+      const trimmedCode = String(req.body.code).trim();
+      const existing = await AcademicYear.findOne({
+        _id: { $ne: id },
+        schoolId,
+        code: trimmedCode,
+        status: { $ne: 'ARCHIVED' },
+      });
+      if (existing) {
+        throw new ValidationError(`Academic year with code "${trimmedCode}" already exists in this school.`);
+      }
     }
 
     Object.assign(year, req.body);

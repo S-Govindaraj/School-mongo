@@ -26,10 +26,17 @@ const getErrorLogs = async (req, res, next) => {
     const sortOrder = req.query.sortOrder === '1' || req.query.sortOrder === 1 ? 1 : -1;
 
     const matchStage = {};
+    const andConditions = [];
 
-    // Filter by school if schoolContext exists and not platform admin
+    // Filter by school if schoolContext exists, including unscoped/system errors
     if (req.schoolContext?.schoolId) {
-      matchStage.schoolId = new mongoose.Types.ObjectId(req.schoolContext.schoolId);
+      andConditions.push({
+        $or: [
+          { schoolId: new mongoose.Types.ObjectId(req.schoolContext.schoolId) },
+          { schoolId: null },
+          { schoolId: { $exists: false } },
+        ],
+      });
     }
 
     if (severity) matchStage.severity = severity;
@@ -44,12 +51,18 @@ const getErrorLogs = async (req, res, next) => {
     }
 
     if (search) {
-      matchStage.$or = [
-        { message: { $regex: search, $options: 'i' } },
-        { endpoint: { $regex: search, $options: 'i' } },
-        { errorType: { $regex: search, $options: 'i' } },
-        { requestId: { $regex: search, $options: 'i' } },
-      ];
+      andConditions.push({
+        $or: [
+          { message: { $regex: search, $options: 'i' } },
+          { endpoint: { $regex: search, $options: 'i' } },
+          { errorType: { $regex: search, $options: 'i' } },
+          { requestId: { $regex: search, $options: 'i' } },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      matchStage.$and = andConditions;
     }
 
     const [result] = await ErrorLog.getGroupedList(matchStage, {
@@ -197,39 +210,52 @@ const recordClientError = async (req, res, next) => {
       stack = '',
       componentStack = '',
       errorKind = 'unhandled-exception',
-      endpoint = window?.location?.pathname || '/',
+      endpoint = '',
+      url = '',
       route = '',
+      routePattern = '',
+      statusCode,
       errorType = 'ClientError',
       browser = '',
       os = '',
       device = '',
+      method = '',
     } = req.body;
+
+    const actualEndpoint = endpoint || url || routePattern || route || '/';
+    const actualRoute = routePattern || route || actualEndpoint;
+    const actualStatusCode = Number(statusCode) || (errorKind === 'api-failure' ? 400 : 500);
 
     const fingerprint = computeFrontendFingerprint({
       errorType,
       message,
-      routePattern: route || endpoint,
+      routePattern: actualRoute,
       errorKind,
       stack,
     });
 
-    const severity = classifyFrontendSeverity({ errorKind, statusCode: 500 });
+    const severity = classifyFrontendSeverity({ errorKind, statusCode: actualStatusCode });
+
+    const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD', 'CLIENT'];
+    const safeMethod = validMethods.includes(String(method).toUpperCase())
+      ? String(method).toUpperCase()
+      : 'CLIENT';
 
     const newLog = await ErrorLog.create({
-      schoolId: req.schoolContext?.schoolId || null,
-      schoolName: req.schoolContext?.schoolName || 'School ERP Client',
+      schoolId: req.schoolContext?.schoolId || req.user?.schoolId?._id || req.user?.schoolId || null,
+      schoolName: req.schoolContext?.schoolName || req.user?.schoolId?.name || 'School ERP Client',
       fingerprint,
       source: 'frontend',
       errorKind,
       componentStack,
-      userId: req.user?.id || null,
+      userId: req.user?._id || req.user?.id || null,
       userName: req.user?.name || '',
       email: req.user?.email || '',
       role: req.user?.role?.name || req.user?.role || '',
-      method: 'CLIENT',
-      endpoint,
-      route,
-      statusCode: 500,
+      method: safeMethod,
+      endpoint: actualEndpoint,
+      route: actualRoute,
+      statusCode: actualStatusCode,
       ipAddress: req.ip || '',
       browser,
       os,

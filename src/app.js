@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const { requestContextMiddleware, errorHandlerMiddleware } = require('./middleware/requestContext');
+const { NotFoundError } = require('./utils/errors');
 const authRoutes = require('./routes/authRoutes');
 const apiRoutes = require('./routes/apiRoutes');
 
@@ -89,14 +90,8 @@ const apiPrefix = process.env.API_PREFIX || '/api/v1';
 app.use(`${apiPrefix}/auth`, authRoutes);
 app.use(apiPrefix, apiRoutes);
 
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: {
-      code: 'ROUTE_NOT_FOUND',
-      message: `Cannot ${req.method} ${req.originalUrl}`,
-    },
-  });
+app.use((req, res, next) => {
+  next(new NotFoundError(`Cannot ${req.method} ${req.originalUrl}`));
 });
 
 app.use(errorHandlerMiddleware);

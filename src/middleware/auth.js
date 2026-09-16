@@ -43,6 +43,34 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+const optionalAuthenticate = async (req, res, next) => {
+  try {
+    let token = req.cookies?.token;
+
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, getJwtSecret());
+        const user = await User.findById(decoded.userId).populate('roleId');
+        if (user && user.status === 'ACTIVE') {
+          req.user = user;
+          req.schoolContext = {
+            schoolId: user.schoolId?._id || user.schoolId,
+          };
+        }
+      } catch (_) {
+        // Ignore token errors for optional authentication
+      }
+    }
+    next();
+  } catch (error) {
+    next();
+  }
+};
+
 const PERMISSION_ALIASES = {
   // Primary Underscore Permissions mapped to legacy dot and action aliases
   'school_view': ['school.view', 'school_view'],
@@ -70,6 +98,9 @@ const PERMISSION_ALIASES = {
   'audit_view': ['audit.view', 'audit_view'],
   'role_view': ['role.view', 'role_view'],
   'role_manage': ['role.manage', 'role_create', 'role_edit', 'role_delete', 'role_activate', 'role_view', 'role.view'],
+  'parent_portal_view': ['parent_portal_view', 'parent_portal.view', 'school_view', 'admin_view'],
+  'teacher_portal_view': ['teacher_portal_view', 'teacher_portal.view', 'teacher_view', 'staff_view', 'school_view'],
+  'student_portal_view': ['student_portal_view', 'student_portal.view', 'student_view', 'school_view'],
 };
 
 const requirePermissions = (...requiredPermissions) => {
@@ -106,6 +137,7 @@ const requirePermissions = (...requiredPermissions) => {
 
 module.exports = {
   authenticate,
+  optionalAuthenticate,
   requirePermissions,
   getJwtSecret,
 };
