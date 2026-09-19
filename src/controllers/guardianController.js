@@ -7,13 +7,18 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getGuardians = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { search = '', page = 1, limit = 50 } = req.query;
+    const { search = '', status = '', includeArchived, page = 1, limit = 50 } = req.query;
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 50;
     const skip = (pageNum - 1) * limitNum;
 
-    const query = { schoolId, status: { $ne: 'ARCHIVED' } };
+    const query = { schoolId };
+    if (status && status !== 'ALL') {
+      query.status = status;
+    } else if (includeArchived === 'false') {
+      query.status = { $ne: 'ARCHIVED' };
+    }
     if (search.trim()) {
       const s = String(search).trim();
       query.$or = [
@@ -114,8 +119,87 @@ const linkGuardian = async (req, res, next) => {
       { upsert: true, new: true }
     );
 
-    await logAuditEvent(req, 'LINK', 'STUDENT_GUARDIAN', link._id, null, link);
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'LINK',
+      entity: 'StudentGuardian',
+      entityId: link._id.toString(),
+      newValues: link.toObject ? link.toObject() : link,
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
     return successResponse(res, link, 'Guardian linked to student successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteGuardian = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const guardian = await Guardian.findOne({ _id: id, schoolId });
+    if (!guardian) {
+      throw new NotFoundError('Guardian not found.');
+    }
+
+    guardian.status = 'ARCHIVED';
+    await guardian.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'ARCHIVE',
+      entity: 'Guardian',
+      entityId: id,
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, null, 'Guardian archived successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const restoreGuardian = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const guardian = await Guardian.findOne({ _id: id, schoolId });
+    if (!guardian) {
+      throw new NotFoundError('Guardian not found.');
+    }
+
+    const oldValues = guardian.toObject();
+    guardian.status = 'ACTIVE';
+    await guardian.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'RESTORE',
+      entity: 'Guardian',
+      entityId: id,
+      oldValues,
+      newValues: guardian.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, guardian, 'Guardian restored successfully');
   } catch (error) {
     next(error);
   }
@@ -126,6 +210,8 @@ module.exports = {
   getGuardianById,
   createGuardian,
   updateGuardian,
+  deleteGuardian,
+  restoreGuardian,
   linkGuardian,
   linkGuardianToStudent: linkGuardian,
 };

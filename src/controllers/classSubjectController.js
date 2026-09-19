@@ -10,9 +10,14 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getClassSubjects = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, gradeId } = req.query;
+    const { academicYearId, gradeId, status, includeArchived } = req.query;
 
-    const filter = { schoolId, status: { $ne: 'ARCHIVED' } };
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
     if (academicYearId) filter.academicYearId = academicYearId;
     if (gradeId) filter.gradeId = gradeId;
 
@@ -246,6 +251,41 @@ const deleteClassSubject = async (req, res, next) => {
   }
 };
 
+const restoreClassSubject = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const record = await ClassSubject.findOne({ _id: id, schoolId });
+    if (!record) {
+      throw new NotFoundError('Class subject configuration not found.');
+    }
+
+    const oldValues = record.toObject();
+    record.status = 'ACTIVE';
+    await record.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'ClassSubject',
+      entityId: record._id.toString(),
+      oldValues,
+      newValues: record.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, record, 'Class subject restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getClassSubjects,
   createClassSubject,
@@ -253,4 +293,5 @@ module.exports = {
   createBulkClassSubjects: saveBulkClassSubjects,
   updateClassSubject,
   deleteClassSubject,
+  restoreClassSubject,
 };

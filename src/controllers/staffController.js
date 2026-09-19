@@ -10,10 +10,16 @@ const bcrypt = require('bcryptjs');
 const getStaff = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const staff = await Staff.find({
-      schoolId,
-      status: { $ne: 'ARCHIVED' },
-    })
+    const { status, includeArchived } = req.query;
+
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    const staff = await Staff.find(filter)
       .populate('userId')
       .sort({ createdAt: -1 });
 
@@ -204,10 +210,46 @@ const deleteStaff = async (req, res, next) => {
   }
 };
 
+const restoreStaff = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const staff = await Staff.findOne({ _id: id, schoolId });
+    if (!staff) {
+      throw new NotFoundError('Staff member not found.');
+    }
+
+    const oldValues = staff.toObject();
+    staff.status = 'ACTIVE';
+    await staff.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'Staff',
+      entityId: id,
+      oldValues,
+      newValues: staff.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, staff, 'Staff member restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getStaff,
   getStaffById,
   createStaff,
   updateStaff,
   deleteStaff,
+  restoreStaff,
 };

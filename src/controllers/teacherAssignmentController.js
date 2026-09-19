@@ -11,9 +11,14 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getTeacherAssignments = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, gradeId, sectionId, staffId } = req.query;
+    const { academicYearId, gradeId, sectionId, staffId, status, includeArchived } = req.query;
 
-    const filter = { schoolId, status: { $ne: 'ARCHIVED' } };
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
     if (academicYearId) filter.academicYearId = academicYearId;
     if (gradeId) filter.gradeId = gradeId;
     if (sectionId) filter.sectionId = sectionId;
@@ -144,8 +149,44 @@ const deleteTeacherAssignment = async (req, res, next) => {
   }
 };
 
+const restoreTeacherAssignment = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const assignment = await TeacherAssignment.findOne({ _id: id, schoolId });
+    if (!assignment) {
+      throw new NotFoundError('Teacher assignment not found.');
+    }
+
+    const oldValues = assignment.toObject();
+    assignment.status = 'ACTIVE';
+    await assignment.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'TeacherAssignment',
+      entityId: assignment._id.toString(),
+      oldValues,
+      newValues: assignment.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, assignment, 'Teacher assignment restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTeacherAssignments,
   createTeacherAssignment,
   deleteTeacherAssignment,
+  restoreTeacherAssignment,
 };

@@ -16,6 +16,7 @@ const getStudents = async (req, res, next) => {
     const {
       search = '',
       status = '',
+      includeArchived,
       gradeId = '',
       sectionId = '',
       academicYearId = '',
@@ -28,10 +29,12 @@ const getStudents = async (req, res, next) => {
     const skip = (pageNum - 1) * limitNum;
 
     // Build filter
-    const query = { schoolId, status: { $ne: 'ARCHIVED' } };
+    const query = { schoolId };
 
     if (status && status !== 'ALL') {
       query.status = status;
+    } else if (includeArchived === 'false') {
+      query.status = { $ne: 'ARCHIVED' };
     }
 
     if (search.trim()) {
@@ -307,8 +310,55 @@ const deleteStudent = async (req, res, next) => {
     student.status = 'ARCHIVED';
     await student.save();
 
-    await logAuditEvent(req, 'ARCHIVE', 'STUDENT', id, null, { status: 'ARCHIVED' });
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'ARCHIVE',
+      entity: 'Student',
+      entityId: id,
+      newValues: { status: 'ARCHIVED' },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
     return successResponse(res, null, 'Student archived successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const restoreStudent = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const student = await Student.findOne({ _id: id, schoolId });
+    if (!student) {
+      throw new NotFoundError('Student record not found');
+    }
+
+    const oldValues = student.toObject();
+    student.status = 'ACTIVE';
+    await student.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'RESTORE',
+      entity: 'Student',
+      entityId: id,
+      oldValues,
+      newValues: student.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, student, 'Student restored successfully');
   } catch (error) {
     next(error);
   }
@@ -322,4 +372,5 @@ module.exports = {
   updateStudent,
   updateStudentStatus,
   deleteStudent,
+  restoreStudent,
 };

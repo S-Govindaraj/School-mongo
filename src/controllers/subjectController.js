@@ -8,10 +8,16 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getSubjects = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const subjects = await Subject.find({
-      schoolId,
-      status: { $ne: 'ARCHIVED' },
-    }).sort({ name: 1 });
+    const { status, includeArchived } = req.query;
+
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    const subjects = await Subject.find(filter).sort({ name: 1 });
 
     return successResponse(res, subjects, 'Subjects retrieved successfully');
   } catch (error) {
@@ -162,9 +168,45 @@ const deleteSubject = async (req, res, next) => {
   }
 };
 
+const restoreSubject = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const subject = await Subject.findOne({ _id: id, schoolId });
+    if (!subject) {
+      throw new NotFoundError('Subject not found.');
+    }
+
+    const oldValues = subject.toObject();
+    subject.status = 'ACTIVE';
+    await subject.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'Subject',
+      entityId: subject._id.toString(),
+      oldValues,
+      newValues: subject.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, subject, 'Subject restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSubjects,
   createSubject,
   updateSubject,
   deleteSubject,
+  restoreSubject,
 };

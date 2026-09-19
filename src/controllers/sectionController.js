@@ -8,9 +8,15 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getSections = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { gradeId } = req.query;
+    const { gradeId, status, includeArchived } = req.query;
 
-    const filter = { schoolId, status: { $ne: 'ARCHIVED' } };
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
+
     if (gradeId) {
       filter.gradeId = gradeId;
     }
@@ -180,9 +186,45 @@ const deleteSection = async (req, res, next) => {
   }
 };
 
+const restoreSection = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const section = await Section.findOne({ _id: id, schoolId });
+    if (!section) {
+      throw new NotFoundError('Section not found.');
+    }
+
+    const oldValues = section.toObject();
+    section.status = 'ACTIVE';
+    await section.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'Section',
+      entityId: section._id.toString(),
+      oldValues,
+      newValues: section.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, section, 'Section restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSections,
   createSection,
   updateSection,
   deleteSection,
+  restoreSection,
 };

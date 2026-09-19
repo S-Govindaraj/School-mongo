@@ -72,10 +72,16 @@ const updateSchoolProfile = async (req, res, next) => {
 const getCampuses = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const campuses = await Campus.find({
-      schoolId,
-      status: { $ne: 'ARCHIVED' },
-    }).sort({ isMain: -1, name: 1 });
+    const { status, includeArchived } = req.query;
+
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    const campuses = await Campus.find(filter).sort({ isMain: -1, name: 1 });
 
     return successResponse(res, campuses, 'Campuses retrieved');
   } catch (error) {
@@ -203,6 +209,41 @@ const deleteCampus = async (req, res, next) => {
   }
 };
 
+const restoreCampus = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const campus = await Campus.findOne({ _id: id, schoolId });
+    if (!campus) {
+      throw new NotFoundError('Campus not found.');
+    }
+
+    const oldValues = campus.toObject();
+    campus.status = 'ACTIVE';
+    await campus.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'Campus',
+      entityId: campus._id.toString(),
+      oldValues,
+      newValues: campus.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, campus, 'Campus restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSchoolProfile,
   updateSchoolProfile,
@@ -210,4 +251,5 @@ module.exports = {
   createCampus,
   updateCampus,
   deleteCampus,
+  restoreCampus,
 };
