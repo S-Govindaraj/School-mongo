@@ -9,10 +9,16 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getGrades = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const grades = await Grade.find({
-      schoolId,
-      status: { $ne: 'ARCHIVED' },
-    }).sort({ sequenceOrder: 1, name: 1 });
+    const { status, includeArchived } = req.query;
+
+    const filter = { schoolId };
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    const grades = await Grade.find(filter).sort({ sequenceOrder: 1, name: 1 });
 
     return successResponse(res, grades, 'Grades retrieved successfully');
   } catch (error) {
@@ -162,9 +168,42 @@ const deleteGrade = async (req, res, next) => {
   }
 };
 
+const restoreGrade = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const grade = await Grade.findOne({ _id: id, schoolId });
+    if (!grade) {
+      throw new NotFoundError('Grade not found.');
+    }
+
+    grade.status = 'ACTIVE';
+    await grade.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'Grade',
+      entityId: grade._id.toString(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, grade, 'Grade restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getGrades,
   createGrade,
   updateGrade,
   deleteGrade,
+  restoreGrade,
 };
