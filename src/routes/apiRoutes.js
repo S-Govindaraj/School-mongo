@@ -94,6 +94,7 @@ router.get('/academic-years/current', requirePermissions('academic_year_view'), 
 router.post('/academic-years', requirePermissions('academic_year_manage'), validate(academicYearSchema), academicYearController.createAcademicYear);
 router.patch('/academic-years/:id', requirePermissions('academic_year_manage'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
 router.post('/academic-years/:id/set-current', requirePermissions('academic_year_manage'), academicYearController.setCurrentAcademicYear);
+router.post('/academic-years/:id/restore', requirePermissions('academic_year_manage'), academicYearController.restoreAcademicYear);
 router.delete('/academic-years/:id', requirePermissions('academic_year_manage'), academicYearController.deleteAcademicYear);
 
 // --- Academic Terms ---

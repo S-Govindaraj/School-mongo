@@ -9,10 +9,18 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getAcademicYears = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const years = await AcademicYear.find({
-      schoolId,
-      status: { $ne: 'ARCHIVED' },
-    }).sort({ startDate: -1 });
+    const { status, includeArchived } = req.query;
+
+    const filter = { schoolId };
+
+    if (status && status !== 'ALL') {
+      filter.status = status;
+    } else if (includeArchived === 'false') {
+      filter.status = { $ne: 'ARCHIVED' };
+    }
+    // Default: includes ALL (ACTIVE, INACTIVE, and ARCHIVED) so management table can view full lifecycle
+
+    const years = await AcademicYear.find(filter).sort({ startDate: -1 });
 
     return successResponse(res, years, 'Academic years retrieved');
   } catch (error) {
@@ -243,6 +251,38 @@ const deleteAcademicYear = async (req, res, next) => {
   }
 };
 
+const restoreAcademicYear = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { id } = req.params;
+
+    const year = await AcademicYear.findOne({ _id: id, schoolId });
+    if (!year) {
+      throw new NotFoundError('Academic year not found.');
+    }
+
+    year.status = 'INACTIVE';
+    await year.save();
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      action: 'RESTORE',
+      entity: 'AcademicYear',
+      entityId: year._id.toString(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, year, 'Academic year restored successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAcademicYears,
   getCurrentAcademicYear,
@@ -250,4 +290,5 @@ module.exports = {
   updateAcademicYear,
   setCurrentAcademicYear,
   deleteAcademicYear,
+  restoreAcademicYear,
 };
