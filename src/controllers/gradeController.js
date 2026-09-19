@@ -126,7 +126,7 @@ const deleteGrade = async (req, res, next) => {
     const hasTeacherAssignments = await TeacherAssignment.countDocuments({ schoolId, gradeId: id, status: { $ne: 'ARCHIVED' } });
 
     if (hasSections > 0 || hasClassSubjects > 0 || hasTeacherAssignments > 0) {
-      grade.status = 'ARCHIVED';
+      grade.status = 'INACTIVE';
       await grade.save();
 
       await logAuditEvent({
@@ -134,19 +134,19 @@ const deleteGrade = async (req, res, next) => {
         actorId: req.user._id,
         actorName: req.user.name,
         actorEmail: req.user.email,
-        action: 'ARCHIVE',
+        action: 'DEACTIVATE',
         entity: 'Grade',
         entityId: grade._id.toString(),
-        reason: 'Referenced by sections or class subjects - archived for data integrity',
+        reason: 'Referenced by sections or class subjects - marked inactive for data integrity',
         requestId: req.requestId,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
 
-      return successResponse(res, null, 'Grade archived successfully (referenced by sections/class subjects)');
+      return successResponse(res, null, 'Grade deactivated successfully (referenced by sections/class subjects)');
     }
 
-    grade.status = 'ARCHIVED';
+    grade.status = 'INACTIVE';
     await grade.save();
 
     await logAuditEvent({
@@ -154,7 +154,7 @@ const deleteGrade = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Grade',
       entityId: id,
       requestId: req.requestId,
@@ -162,7 +162,7 @@ const deleteGrade = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Grade archived successfully');
+    return successResponse(res, null, 'Grade deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -186,7 +186,7 @@ const restoreGrade = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Grade',
       entityId: grade._id.toString(),
       requestId: req.requestId,
@@ -194,7 +194,7 @@ const restoreGrade = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, grade, 'Grade restored successfully');
+    return successResponse(res, grade, 'Grade activated successfully');
   } catch (error) {
     next(error);
   }

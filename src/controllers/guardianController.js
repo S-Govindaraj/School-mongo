@@ -148,7 +148,7 @@ const deleteGuardian = async (req, res, next) => {
       throw new NotFoundError('Guardian not found.');
     }
 
-    guardian.status = 'ARCHIVED';
+    guardian.status = 'INACTIVE';
     await guardian.save();
 
     await logAuditEvent({
@@ -156,7 +156,7 @@ const deleteGuardian = async (req, res, next) => {
       actorId: req.user?._id,
       actorName: req.user?.name,
       actorEmail: req.user?.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Guardian',
       entityId: id,
       requestId: req.requestId,
@@ -164,7 +164,7 @@ const deleteGuardian = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Guardian archived successfully');
+    return successResponse(res, null, 'Guardian deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -189,7 +189,7 @@ const restoreGuardian = async (req, res, next) => {
       actorId: req.user?._id,
       actorName: req.user?.name,
       actorEmail: req.user?.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Guardian',
       entityId: id,
       oldValues,
@@ -199,7 +199,7 @@ const restoreGuardian = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, guardian, 'Guardian restored successfully');
+    return successResponse(res, guardian, 'Guardian activated successfully');
   } catch (error) {
     next(error);
   }

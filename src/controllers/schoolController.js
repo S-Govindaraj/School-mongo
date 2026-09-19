@@ -184,10 +184,10 @@ const deleteCampus = async (req, res, next) => {
     }
 
     if (campus.isMain) {
-      throw new ValidationError('Main campus cannot be archived or deleted. Set another campus as main campus first.');
+      throw new ValidationError('Main campus cannot be deactivated. Set another campus as main campus first.');
     }
 
-    campus.status = 'ARCHIVED';
+    campus.status = 'INACTIVE';
     await campus.save();
 
     await logAuditEvent({
@@ -195,7 +195,7 @@ const deleteCampus = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Campus',
       entityId: campus._id.toString(),
       requestId: req.requestId,
@@ -203,7 +203,7 @@ const deleteCampus = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Campus archived successfully');
+    return successResponse(res, null, 'Campus deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -228,7 +228,7 @@ const restoreCampus = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Campus',
       entityId: campus._id.toString(),
       oldValues,
@@ -238,7 +238,7 @@ const restoreCampus = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, campus, 'Campus restored successfully');
+    return successResponse(res, campus, 'Campus activated successfully');
   } catch (error) {
     next(error);
   }

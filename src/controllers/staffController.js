@@ -188,7 +188,7 @@ const deleteStaff = async (req, res, next) => {
       throw new NotFoundError('Staff member not found.');
     }
 
-    staff.status = 'ARCHIVED';
+    staff.status = 'INACTIVE';
     await staff.save();
 
     await logAuditEvent({
@@ -196,7 +196,7 @@ const deleteStaff = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Staff',
       entityId: id,
       requestId: req.requestId,
@@ -204,7 +204,7 @@ const deleteStaff = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Staff member archived successfully');
+    return successResponse(res, null, 'Staff member deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -229,7 +229,7 @@ const restoreStaff = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Staff',
       entityId: id,
       oldValues,
@@ -239,7 +239,7 @@ const restoreStaff = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, staff, 'Staff member restored successfully');
+    return successResponse(res, staff, 'Staff member activated successfully');
   } catch (error) {
     next(error);
   }

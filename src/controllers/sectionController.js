@@ -144,7 +144,7 @@ const deleteSection = async (req, res, next) => {
     const hasAssignments = await TeacherAssignment.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } });
 
     if (hasAssignments > 0) {
-      section.status = 'ARCHIVED';
+      section.status = 'INACTIVE';
       await section.save();
 
       await logAuditEvent({
@@ -152,19 +152,19 @@ const deleteSection = async (req, res, next) => {
         actorId: req.user._id,
         actorName: req.user.name,
         actorEmail: req.user.email,
-        action: 'ARCHIVE',
+        action: 'DEACTIVATE',
         entity: 'Section',
         entityId: section._id.toString(),
-        reason: 'Referenced by teacher assignments - archived for data preservation',
+        reason: 'Referenced by teacher assignments - marked inactive for data preservation',
         requestId: req.requestId,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
 
-      return successResponse(res, null, 'Section archived successfully (referenced by teacher assignments)');
+      return successResponse(res, null, 'Section deactivated successfully (referenced by teacher assignments)');
     }
 
-    section.status = 'ARCHIVED';
+    section.status = 'INACTIVE';
     await section.save();
 
     await logAuditEvent({
@@ -172,7 +172,7 @@ const deleteSection = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Section',
       entityId: id,
       requestId: req.requestId,
@@ -180,7 +180,7 @@ const deleteSection = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Section archived successfully');
+    return successResponse(res, null, 'Section deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -205,7 +205,7 @@ const restoreSection = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Section',
       entityId: section._id.toString(),
       oldValues,
@@ -215,7 +215,7 @@ const restoreSection = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, section, 'Section restored successfully');
+    return successResponse(res, section, 'Section activated successfully');
   } catch (error) {
     next(error);
   }

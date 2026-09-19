@@ -127,7 +127,7 @@ const deleteTeacherAssignment = async (req, res, next) => {
       throw new NotFoundError('Teacher assignment not found.');
     }
 
-    assignment.status = 'ARCHIVED';
+    assignment.status = 'INACTIVE';
     await assignment.save();
 
     await logAuditEvent({
@@ -135,7 +135,7 @@ const deleteTeacherAssignment = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'UNASSIGN',
+      action: 'DEACTIVATE',
       entity: 'TeacherAssignment',
       entityId: id,
       requestId: req.requestId,
@@ -143,7 +143,7 @@ const deleteTeacherAssignment = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Teacher assignment archived successfully');
+    return successResponse(res, null, 'Teacher assignment deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -168,7 +168,7 @@ const restoreTeacherAssignment = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'TeacherAssignment',
       entityId: assignment._id.toString(),
       oldValues,
@@ -178,7 +178,7 @@ const restoreTeacherAssignment = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, assignment, 'Teacher assignment restored successfully');
+    return successResponse(res, assignment, 'Teacher assignment activated successfully');
   } catch (error) {
     next(error);
   }

@@ -72,10 +72,10 @@ const deletePeriod = async (req, res, next) => {
     const period = await Period.findOne({ _id: id, schoolId });
     if (!period) throw new NotFoundError('Period not found');
 
-    period.status = 'ARCHIVED';
+    period.status = 'INACTIVE';
     await period.save();
 
-    return successResponse(res, null, 'Period archived successfully');
+    return successResponse(res, null, 'Period deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -92,7 +92,7 @@ const restorePeriod = async (req, res, next) => {
     period.status = 'ACTIVE';
     await period.save();
 
-    return successResponse(res, period, 'Period restored successfully');
+    return successResponse(res, period, 'Period activated successfully');
   } catch (error) {
     next(error);
   }

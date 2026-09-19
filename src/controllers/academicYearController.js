@@ -206,8 +206,8 @@ const deleteAcademicYear = async (req, res, next) => {
     const hasTeacherAssignments = await TeacherAssignment.countDocuments({ schoolId, academicYearId: id });
 
     if (hasTerms > 0 || hasClassSubjects > 0 || hasTeacherAssignments > 0) {
-      // Historical preservation requirement: archive instead of hard delete
-      year.status = 'ARCHIVED';
+      // Historical preservation requirement: deactivate instead of hard delete
+      year.status = 'INACTIVE';
       year.isCurrent = false;
       await year.save();
 
@@ -216,19 +216,19 @@ const deleteAcademicYear = async (req, res, next) => {
         actorId: req.user._id,
         actorName: req.user.name,
         actorEmail: req.user.email,
-        action: 'ARCHIVE',
+        action: 'DEACTIVATE',
         entity: 'AcademicYear',
         entityId: year._id.toString(),
-        reason: 'Referenced by historical records - archived for data preservation',
+        reason: 'Referenced by historical records - marked inactive for data preservation',
         requestId: req.requestId,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
 
-      return successResponse(res, null, 'Academic year archived (referenced by historical records)');
+      return successResponse(res, null, 'Academic year deactivated successfully');
     }
 
-    year.status = 'ARCHIVED';
+    year.status = 'INACTIVE';
     year.isCurrent = false;
     await year.save();
 
@@ -237,7 +237,7 @@ const deleteAcademicYear = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'AcademicYear',
       entityId: id,
       requestId: req.requestId,
@@ -245,7 +245,7 @@ const deleteAcademicYear = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Academic year archived successfully');
+    return successResponse(res, null, 'Academic year deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -261,7 +261,7 @@ const restoreAcademicYear = async (req, res, next) => {
       throw new NotFoundError('Academic year not found.');
     }
 
-    year.status = 'INACTIVE';
+    year.status = 'ACTIVE';
     await year.save();
 
     await logAuditEvent({
@@ -269,7 +269,7 @@ const restoreAcademicYear = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'AcademicYear',
       entityId: year._id.toString(),
       requestId: req.requestId,
@@ -277,7 +277,7 @@ const restoreAcademicYear = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, year, 'Academic year restored successfully');
+    return successResponse(res, year, 'Academic year activated successfully');
   } catch (error) {
     next(error);
   }

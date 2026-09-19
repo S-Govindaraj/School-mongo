@@ -126,7 +126,7 @@ const deleteSubject = async (req, res, next) => {
     const hasAssignments = await TeacherAssignment.countDocuments({ schoolId, subjectId: id, status: { $ne: 'ARCHIVED' } });
 
     if (hasClassSubjects > 0 || hasAssignments > 0) {
-      subject.status = 'ARCHIVED';
+      subject.status = 'INACTIVE';
       await subject.save();
 
       await logAuditEvent({
@@ -134,19 +134,19 @@ const deleteSubject = async (req, res, next) => {
         actorId: req.user._id,
         actorName: req.user.name,
         actorEmail: req.user.email,
-        action: 'ARCHIVE',
+        action: 'DEACTIVATE',
         entity: 'Subject',
         entityId: subject._id.toString(),
-        reason: 'Referenced by class subjects or teacher assignments - archived for data preservation',
+        reason: 'Referenced by class subjects or teacher assignments - marked inactive for data preservation',
         requestId: req.requestId,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
 
-      return successResponse(res, null, 'Subject archived successfully (referenced by class configurations)');
+      return successResponse(res, null, 'Subject deactivated successfully (referenced by class configurations)');
     }
 
-    subject.status = 'ARCHIVED';
+    subject.status = 'INACTIVE';
     await subject.save();
 
     await logAuditEvent({
@@ -154,7 +154,7 @@ const deleteSubject = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Subject',
       entityId: id,
       requestId: req.requestId,
@@ -162,7 +162,7 @@ const deleteSubject = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Subject archived successfully');
+    return successResponse(res, null, 'Subject deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -187,7 +187,7 @@ const restoreSubject = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Subject',
       entityId: subject._id.toString(),
       oldValues,
@@ -197,7 +197,7 @@ const restoreSubject = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, subject, 'Subject restored successfully');
+    return successResponse(res, subject, 'Subject activated successfully');
   } catch (error) {
     next(error);
   }

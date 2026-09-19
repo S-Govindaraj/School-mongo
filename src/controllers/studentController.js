@@ -307,7 +307,7 @@ const deleteStudent = async (req, res, next) => {
       throw new NotFoundError('Student record not found');
     }
 
-    student.status = 'ARCHIVED';
+    student.status = 'INACTIVE';
     await student.save();
 
     await logAuditEvent({
@@ -315,15 +315,15 @@ const deleteStudent = async (req, res, next) => {
       actorId: req.user?._id,
       actorName: req.user?.name,
       actorEmail: req.user?.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'Student',
       entityId: id,
-      newValues: { status: 'ARCHIVED' },
+      newValues: { status: 'INACTIVE' },
       requestId: req.requestId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
-    return successResponse(res, null, 'Student archived successfully');
+    return successResponse(res, null, 'Student deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -348,7 +348,7 @@ const restoreStudent = async (req, res, next) => {
       actorId: req.user?._id,
       actorName: req.user?.name,
       actorEmail: req.user?.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'Student',
       entityId: id,
       oldValues,
@@ -358,7 +358,7 @@ const restoreStudent = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, student, 'Student restored successfully');
+    return successResponse(res, student, 'Student activated successfully');
   } catch (error) {
     next(error);
   }

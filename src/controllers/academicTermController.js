@@ -136,7 +136,7 @@ const deleteAcademicTerm = async (req, res, next) => {
       throw new NotFoundError('Academic term not found.');
     }
 
-    term.status = 'ARCHIVED';
+    term.status = 'INACTIVE';
     term.isCurrent = false;
     await term.save();
 
@@ -145,7 +145,7 @@ const deleteAcademicTerm = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'AcademicTerm',
       entityId: term._id.toString(),
       requestId: req.requestId,
@@ -153,7 +153,7 @@ const deleteAcademicTerm = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Academic term archived successfully');
+    return successResponse(res, null, 'Academic term deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -169,7 +169,7 @@ const restoreAcademicTerm = async (req, res, next) => {
       throw new NotFoundError('Academic term not found.');
     }
 
-    term.status = 'INACTIVE';
+    term.status = 'ACTIVE';
     await term.save();
 
     await logAuditEvent({
@@ -177,7 +177,7 @@ const restoreAcademicTerm = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'AcademicTerm',
       entityId: term._id.toString(),
       requestId: req.requestId,
@@ -185,7 +185,7 @@ const restoreAcademicTerm = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, term, 'Academic term restored successfully');
+    return successResponse(res, term, 'Academic term activated successfully');
   } catch (error) {
     next(error);
   }

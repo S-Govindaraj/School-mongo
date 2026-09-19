@@ -209,7 +209,7 @@ const deleteClassSubject = async (req, res, next) => {
     });
 
     if (hasAssignments > 0) {
-      record.status = 'ARCHIVED';
+      record.status = 'INACTIVE';
       await record.save();
 
       await logAuditEvent({
@@ -217,19 +217,19 @@ const deleteClassSubject = async (req, res, next) => {
         actorId: req.user._id,
         actorName: req.user.name,
         actorEmail: req.user.email,
-        action: 'ARCHIVE',
+        action: 'DEACTIVATE',
         entity: 'ClassSubject',
         entityId: record._id.toString(),
-        reason: 'Referenced by active teacher assignments - archived for data preservation',
+        reason: 'Referenced by active teacher assignments - marked inactive for data preservation',
         requestId: req.requestId,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
 
-      return successResponse(res, null, 'Class subject archived (referenced by teacher assignments)');
+      return successResponse(res, null, 'Class subject deactivated (referenced by teacher assignments)');
     }
 
-    record.status = 'ARCHIVED';
+    record.status = 'INACTIVE';
     await record.save();
 
     await logAuditEvent({
@@ -237,7 +237,7 @@ const deleteClassSubject = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'ARCHIVE',
+      action: 'DEACTIVATE',
       entity: 'ClassSubject',
       entityId: id,
       requestId: req.requestId,
@@ -245,7 +245,7 @@ const deleteClassSubject = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, null, 'Class subject archived successfully');
+    return successResponse(res, null, 'Class subject deactivated successfully');
   } catch (error) {
     next(error);
   }
@@ -270,7 +270,7 @@ const restoreClassSubject = async (req, res, next) => {
       actorId: req.user._id,
       actorName: req.user.name,
       actorEmail: req.user.email,
-      action: 'RESTORE',
+      action: 'ACTIVATE',
       entity: 'ClassSubject',
       entityId: record._id.toString(),
       oldValues,
@@ -280,7 +280,7 @@ const restoreClassSubject = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, record, 'Class subject restored successfully');
+    return successResponse(res, record, 'Class subject activated successfully');
   } catch (error) {
     next(error);
   }
