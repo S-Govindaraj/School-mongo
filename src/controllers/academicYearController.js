@@ -48,7 +48,7 @@ const withTransactionOrFallback = async (operation) => {
     if (session) {
       try {
         await session.abortTransaction();
-      } catch (_) {}
+      } catch (_) { }
     }
     // If running in standalone Mongo (e.g., local dev without replica set)
     if (err.message && err.message.includes('replica set member or mongos')) {
@@ -59,7 +59,7 @@ const withTransactionOrFallback = async (operation) => {
     if (session) {
       try {
         await session.endSession();
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 };
@@ -70,14 +70,35 @@ const getAcademicYears = async (req, res, next) => {
     const { status, includeArchived } = req.query;
 
     const filter = { schoolId };
+
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
     }
 
-    const years = await AcademicYear.find(filter).sort({ startDate: -1 });
-    return successResponse(res, years, 'Academic years retrieved');
+    const years = await AcademicYear.find(filter)
+      .sort({ startDate: -1 })
+      .populate({
+        path: 'terms',
+        select: '_id name code status',
+        options: {
+          sort: { sequence: 1 },
+        },
+      })
+      .lean();
+
+    const result = years.map((year) => ({
+      ...year,
+      terms: year.terms || [],
+      termCount: year.terms?.length || 0,
+    }));
+
+    return successResponse(
+      res,
+      result,
+      'Academic years retrieved'
+    );
   } catch (error) {
     next(error);
   }
