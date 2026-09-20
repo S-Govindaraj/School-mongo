@@ -25,8 +25,9 @@ const getSections = async (req, res, next) => {
     }
 
     const sections = await Section.find(filter)
-      .populate('gradeId')
-      .sort({ code: 1, name: 1 });
+      .populate('gradeId', 'name code category')
+      .sort({ code: 1, name: 1 })
+      .lean();
 
     return successResponse(res, sections, 'Sections retrieved successfully');
   } catch (error) {

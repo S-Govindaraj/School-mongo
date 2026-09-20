@@ -58,5 +58,7 @@ const studentLedgerSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 studentLedgerSchema.index({ schoolId: 1, studentId: 1, transactionDate: 1 });
+// The aggregate query in generateBulkInvoices groups by studentId — needs this
+studentLedgerSchema.index({ schoolId: 1, studentId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('StudentLedger', studentLedgerSchema);

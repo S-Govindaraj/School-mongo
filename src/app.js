@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
@@ -16,6 +17,9 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
+
+// Gzip/Brotli compression for all JSON/text responses
+app.use(compression({ threshold: 1024 })); // only compress responses > 1KB
 
 const allowedOrigins = [
   'http://localhost:5173',
@@ -47,8 +51,8 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));       // tightened from 10mb — payloads should never be 10mb
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 
 app.use(requestContextMiddleware);

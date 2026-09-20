@@ -134,26 +134,27 @@ const createAcademicYear = async (req, res, next) => {
       throw new ValidationError('End date must be after the start date.');
     }
 
-    // Check duplicate by normalized canonical code or name within school
-    const existing = await AcademicYear.findOne({
-      schoolId,
-      $or: [{ code: normalized.canonical }, { name: normalized.canonical }, { name: normalized.display }],
-      status: { $ne: 'ARCHIVED' },
-    });
+    // Parallel duplicate + overlap checks
+    const [existing, overlapping] = await Promise.all([
+      AcademicYear.findOne({
+        schoolId,
+        $or: [{ code: normalized.canonical }, { name: normalized.canonical }, { name: normalized.display }],
+        status: { $ne: 'ARCHIVED' },
+      }).lean(),
+      AcademicYear.findOne({
+        schoolId,
+        status: { $ne: 'ARCHIVED' },
+        $or: [
+          { startDate: { $lte: start }, endDate: { $gte: start } },
+          { startDate: { $lte: end }, endDate: { $gte: end } },
+          { startDate: { $gte: start }, endDate: { $lte: end } },
+        ],
+      }).lean(),
+    ]);
+    
     if (existing) {
       throw new ValidationError(`Academic year ${normalized.display} already exists.`);
     }
-
-    // Check date overlap with existing active/inactive non-archived years
-    const overlapping = await AcademicYear.findOne({
-      schoolId,
-      status: { $ne: 'ARCHIVED' },
-      $or: [
-        { startDate: { $lte: start }, endDate: { $gte: start } },
-        { startDate: { $lte: end }, endDate: { $gte: end } },
-        { startDate: { $gte: start }, endDate: { $lte: end } },
-      ],
-    });
     if (overlapping) {
       throw new ValidationError(`Academic year dates overlap with existing academic year '${overlapping.code}'.`);
     }

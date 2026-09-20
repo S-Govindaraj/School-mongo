@@ -20,7 +20,7 @@ const redactSensitiveData = (data) => {
   return sanitized;
 };
 
-const logAuditEvent = async ({
+const logAuditEvent = ({
   schoolId = null,
   actorId = null,
   actorName = 'System',
@@ -36,26 +36,25 @@ const logAuditEvent = async ({
   ipAddress = '',
   userAgent = '',
 }) => {
-  try {
-    await AuditLog.create({
-      schoolId,
-      actorId,
-      actorName,
-      actorEmail,
-      action,
-      entity,
-      entityId,
-      oldValues: redactSensitiveData(oldValues),
-      newValues: redactSensitiveData(newValues),
-      reason,
-      requestId,
-      details: redactSensitiveData(details),
-      ipAddress,
-      userAgent,
-    });
-  } catch (error) {
+  // Fire-and-forget: do NOT await — audit writes must never block the API response
+  AuditLog.create({
+    schoolId,
+    actorId,
+    actorName,
+    actorEmail,
+    action,
+    entity,
+    entityId,
+    oldValues: redactSensitiveData(oldValues),
+    newValues: redactSensitiveData(newValues),
+    reason,
+    requestId,
+    details: redactSensitiveData(details),
+    ipAddress,
+    userAgent,
+  }).catch((error) => {
     logger.error(`Failed to log audit event: ${error.message}`);
-  }
+  });
 };
 
 module.exports = {

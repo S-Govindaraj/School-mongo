@@ -30,5 +30,8 @@ const paymentSchema = new mongoose.Schema(
 
 paymentSchema.index({ schoolId: 1, paymentNumber: 1 }, { unique: true });
 paymentSchema.index({ schoolId: 1, idempotencyKey: 1 }, { unique: true });
+// Student payment history — most common query in finance dashboard
+paymentSchema.index({ schoolId: 1, studentId: 1, paymentDate: -1 });
+paymentSchema.index({ schoolId: 1, status: 1, paymentDate: -1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

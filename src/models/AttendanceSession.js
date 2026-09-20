@@ -20,5 +20,7 @@ const attendanceSessionSchema = new mongoose.Schema(
 );
 
 attendanceSessionSchema.index({ schoolId: 1, academicYearId: 1, date: 1, sectionId: 1, attendanceType: 1 });
+// Session lookup also queries by gradeId for daily summaries
+attendanceSessionSchema.index({ schoolId: 1, gradeId: 1, date: 1 });
 
 module.exports = mongoose.model('AttendanceSession', attendanceSessionSchema);

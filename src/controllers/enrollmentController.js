@@ -62,20 +62,17 @@ const createEnrollment = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     const { studentId, academicYearId, gradeId, sectionId } = req.body;
 
-    // 1. Verify student exists and belongs to school
-    const student = await Student.findOne({ _id: studentId, schoolId });
+    // Validate all references in parallel (4 queries → 1 round-trip)
+    const [student, ay, grade, section] = await Promise.all([
+      Student.findOne({ _id: studentId, schoolId }),
+      AcademicYear.findOne({ _id: academicYearId, schoolId }),
+      Grade.findOne({ _id: gradeId, schoolId }),
+      Section.findOne({ _id: sectionId, gradeId, schoolId }),
+    ]);
+
     if (!student) throw new NotFoundError('Student profile not found');
-
-    // 2. Verify academic year exists
-    const ay = await AcademicYear.findOne({ _id: academicYearId, schoolId });
-    if (!ay) throw new ValidationError('Invalid Academic Year');
-
-    // 3. Verify grade exists
-    const grade = await Grade.findOne({ _id: gradeId, schoolId });
-    if (!grade) throw new ValidationError('Invalid Grade');
-
-    // 4. Verify section belongs to grade and school
-    const section = await Section.findOne({ _id: sectionId, gradeId, schoolId });
+    if (!ay)      throw new ValidationError('Invalid Academic Year');
+    if (!grade)   throw new ValidationError('Invalid Grade');
     if (!section) throw new ValidationError('Invalid Section for the selected Grade');
 
     // 5. Deactivate previous active enrollment for this student in this academic year

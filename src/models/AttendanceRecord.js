@@ -25,9 +25,12 @@ attendanceRecordSchema.index(
   { schoolId: 1, attendanceSessionId: 1, studentId: 1 },
   { unique: true }
 );
-
 // Indexes for fast date and student resolution
 attendanceRecordSchema.index({ schoolId: 1, studentId: 1, date: 1 });
 attendanceRecordSchema.index({ schoolId: 1, academicYearId: 1, studentId: 1 });
+// Section-level daily view — used heavily by teachers
+attendanceRecordSchema.index({ schoolId: 1, sectionId: 1, date: 1 });
+// Bulk mark attendance uses studentId $in + section + AY
+attendanceRecordSchema.index({ schoolId: 1, gradeId: 1, sectionId: 1, academicYearId: 1, date: 1 });
 
 module.exports = mongoose.model('AttendanceRecord', attendanceRecordSchema);

@@ -23,102 +23,50 @@ const validateTimetableRelationsAndConflicts = async (schoolId, data, currentId 
     roomNumber,
   } = data;
 
-  // 1. Verify Academic Year
-  const year = await AcademicYear.findOne({ _id: academicYearId, schoolId });
-  if (!year) throw new ValidationError('Selected academic year does not exist in this school.');
+  // Phase 1: all independent entity lookups in parallel (6 queries → 1 round-trip)
+  const [year, grade, section, period, classSubject, teacher] = await Promise.all([
+    AcademicYear.findOne({ _id: academicYearId, schoolId }),
+    Grade.findOne({ _id: gradeId, schoolId }),
+    Section.findOne({ _id: sectionId, schoolId }),
+    Period.findOne({ _id: periodId, schoolId }),
+    ClassSubject.findOne({ schoolId, academicYearId, gradeId, subjectId, status: { $ne: 'ARCHIVED' } }),
+    Staff.findOne({ _id: teacherId, schoolId }),
+  ]);
 
-  // 2. Verify Grade
-  const grade = await Grade.findOne({ _id: gradeId, schoolId });
-  if (!grade) throw new ValidationError('Selected grade does not exist in this school.');
+  if (!year)        throw new ValidationError('Selected academic year does not exist in this school.');
+  if (!grade)       throw new ValidationError('Selected grade does not exist in this school.');
+  if (!section)     throw new ValidationError('Selected section does not exist in this school.');
+  if (String(section.gradeId) !== String(gradeId))
+                    throw new ValidationError('Selected section does not belong to the selected grade.');
+  if (!period)      throw new ValidationError('Selected period does not exist in this school.');
+  if (!classSubject) throw new ValidationError('This subject is not configured for the selected class.');
+  if (!teacher)     throw new ValidationError('Selected teacher does not exist in this school.');
 
-  // 3. Verify Section belongs to Grade
-  const section = await Section.findOne({ _id: sectionId, schoolId });
-  if (!section) throw new ValidationError('Selected section does not exist in this school.');
-  if (String(section.gradeId) !== String(gradeId)) {
-    throw new ValidationError('Selected section does not belong to the selected grade.');
-  }
-
-  // 4. Verify Period
-  const period = await Period.findOne({ _id: periodId, schoolId });
-  if (!period) throw new ValidationError('Selected period does not exist in this school.');
-
-  // 5. Verify Subject is configured in ClassSubject for this grade and year
-  const classSubject = await ClassSubject.findOne({
-    schoolId,
-    academicYearId,
-    gradeId,
-    subjectId,
-    status: { $ne: 'ARCHIVED' },
-  });
-  if (!classSubject) {
-    throw new ValidationError('This subject is not configured for the selected class.');
-  }
-
-  // 6. Verify Teacher exists and belongs to school
-  const teacher = await Staff.findOne({ _id: teacherId, schoolId });
-  if (!teacher) throw new ValidationError('Selected teacher does not exist in this school.');
-
-  // 7. Verify Teacher is assigned to this class/subject in TeacherAssignment
-  const assignment = await TeacherAssignment.findOne({
-    schoolId,
-    academicYearId,
-    gradeId,
-    sectionId,
-    subjectId,
-    staffId: teacherId,
-    status: { $ne: 'ARCHIVED' },
-  });
-  if (!assignment) {
-    throw new ValidationError('This teacher is not assigned to teach this subject to the selected section.');
-  }
-
-  // 8. Conflict Check 1: Section Conflict (Section double booking)
-  const sectionQuery = {
-    schoolId,
-    academicYearId,
-    sectionId,
-    dayOfWeek,
-    periodId,
-    status: { $ne: 'ARCHIVED' },
-  };
-  if (currentId) sectionQuery._id = { $ne: currentId };
-  const sectionConflict = await Timetable.findOne(sectionQuery);
-  if (sectionConflict) {
-    throw new ValidationError('This class already has a timetable entry for the selected period.');
-  }
-
-  // 9. Conflict Check 2: Teacher Conflict (Teacher double booking)
-  const teacherQuery = {
-    schoolId,
-    academicYearId,
-    teacherId,
-    dayOfWeek,
-    periodId,
-    status: { $ne: 'ARCHIVED' },
-  };
-  if (currentId) teacherQuery._id = { $ne: currentId };
-  const teacherConflict = await Timetable.findOne(teacherQuery);
-  if (teacherConflict) {
-    throw new ValidationError('This teacher is already assigned during the selected period.');
-  }
-
-  // 10. Conflict Check 3: Room Conflict (Room double booking)
+  // Phase 2: assignment + conflict checks in parallel (4 queries → 1 round-trip)
   const room = String(roomNumber || '').trim();
-  if (room) {
-    const roomQuery = {
-      schoolId,
-      academicYearId,
-      roomNumber: room,
-      dayOfWeek,
-      periodId,
-      status: { $ne: 'ARCHIVED' },
-    };
-    if (currentId) roomQuery._id = { $ne: currentId };
-    const roomConflict = await Timetable.findOne(roomQuery);
-    if (roomConflict) {
-      throw new ValidationError(`This room '${room}' is already occupied during the selected period.`);
-    }
+
+  const sectionConflictQuery = { schoolId, academicYearId, sectionId, dayOfWeek, periodId, status: { $ne: 'ARCHIVED' } };
+  const teacherConflictQuery = { schoolId, academicYearId, teacherId, dayOfWeek, periodId, status: { $ne: 'ARCHIVED' } };
+  const roomConflictQuery    = room ? { schoolId, academicYearId, roomNumber: room, dayOfWeek, periodId, status: { $ne: 'ARCHIVED' } } : null;
+  const assignmentQuery      = { schoolId, academicYearId, gradeId, sectionId, subjectId, staffId: teacherId, status: { $ne: 'ARCHIVED' } };
+
+  if (currentId) {
+    sectionConflictQuery._id = { $ne: currentId };
+    teacherConflictQuery._id = { $ne: currentId };
+    if (roomConflictQuery) roomConflictQuery._id = { $ne: currentId };
   }
+
+  const [assignment, sectionConflict, teacherConflict, roomConflict] = await Promise.all([
+    TeacherAssignment.findOne(assignmentQuery),
+    Timetable.findOne(sectionConflictQuery),
+    Timetable.findOne(teacherConflictQuery),
+    roomConflictQuery ? Timetable.findOne(roomConflictQuery) : Promise.resolve(null),
+  ]);
+
+  if (!assignment)    throw new ValidationError('This teacher is not assigned to teach this subject to the selected section.');
+  if (sectionConflict) throw new ValidationError('This class already has a timetable entry for the selected period.');
+  if (teacherConflict) throw new ValidationError('This teacher is already assigned during the selected period.');
+  if (roomConflict)    throw new ValidationError(`This room '${room}' is already occupied during the selected period.`);
 };
 
 const getTimetables = async (req, res, next) => {

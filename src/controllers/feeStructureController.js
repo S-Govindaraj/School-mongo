@@ -12,22 +12,35 @@ const getFeeStructures = async (req, res, next) => {
     if (gradeId) query.gradeIds = gradeId;
     if (status && status !== 'ALL') query.status = status;
 
-    const structures = await FeeStructure.find(query)
-      .populate('academicYearId', 'name code')
-      .populate('gradeIds', 'name code')
-      .populate('sectionIds', 'name code')
-      .sort({ createdAt: -1 });
-
-    // Fetch items for each structure
-    const structureIds = structures.map(s => s._id);
-    const items = await FeeStructureItem.find({ schoolId, feeStructureId: { $in: structureIds } })
-      .populate('feeCategoryId', 'name code categoryType');
-
-    const result = structures.map(s => {
-      const sObj = s.toObject();
-      sObj.items = items.filter(i => String(i.feeStructureId) === String(s._id));
-      return sObj;
-    });
+    // Single aggregation pipeline — fetches structures + embedded items in one round-trip
+    const result = await FeeStructure.aggregate([
+      { $match: query },
+      { $lookup: {
+          from: 'feestructureitems',
+          let: { structureId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$feeStructureId', '$$structureId'] } } },
+            { $lookup: {
+                from: 'feecategories',
+                localField: 'feeCategoryId',
+                foreignField: '_id',
+                as: 'feeCategoryId',
+                pipeline: [{ $project: { name: 1, code: 1, categoryType: 1 } }],
+            }},
+            { $unwind: { path: '$feeCategoryId', preserveNullAndEmptyArrays: true } },
+          ],
+          as: 'items',
+      }},
+      // Populate academicYearId, gradeIds, sectionIds
+      { $lookup: { from: 'academicyears',  localField: 'academicYearId', foreignField: '_id', as: 'academicYearId',
+          pipeline: [{ $project: { name: 1, code: 1 } }] }},
+      { $unwind: { path: '$academicYearId', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'grades', localField: 'gradeIds', foreignField: '_id', as: 'gradeIds',
+          pipeline: [{ $project: { name: 1, code: 1 } }] }},
+      { $lookup: { from: 'sections', localField: 'sectionIds', foreignField: '_id', as: 'sectionIds',
+          pipeline: [{ $project: { name: 1, code: 1 } }] }},
+      { $sort: { createdAt: -1 } },
+    ]);
 
     return successResponse(res, result, 'Fee structures fetched successfully');
   } catch (error) {
@@ -40,17 +53,19 @@ const getFeeStructureById = async (req, res, next) => {
     const schoolId = req.schoolContext.schoolId;
     const { id } = req.params;
 
-    const structure = await FeeStructure.findOne({ _id: id, schoolId })
-      .populate('academicYearId', 'name code')
-      .populate('gradeIds', 'name code')
-      .populate('sectionIds', 'name code');
+    // Fetch structure + items in parallel (2 queries → 1 round-trip)
+    const [structure, items] = await Promise.all([
+      FeeStructure.findOne({ _id: id, schoolId })
+        .populate('academicYearId', 'name code')
+        .populate('gradeIds', 'name code')
+        .populate('sectionIds', 'name code'),
+      FeeStructureItem.find({ schoolId, feeStructureId: id })
+        .populate('feeCategoryId', 'name code categoryType'),
+    ]);
 
     if (!structure) {
       return errorResponse(res, 'Fee structure not found', 404, 'NOT_FOUND');
     }
-
-    const items = await FeeStructureItem.find({ schoolId, feeStructureId: id })
-      .populate('feeCategoryId', 'name code categoryType');
 
     const result = structure.toObject();
     result.items = items;
@@ -175,7 +190,7 @@ const updateFeeStructure = async (req, res, next) => {
     await structure.save();
 
     if (Array.isArray(items)) {
-      // Refresh items for structure
+      // Refresh items: delete old + insert new, then use insertMany result directly
       await FeeStructureItem.deleteMany({ schoolId, feeStructureId: id });
       const itemsToCreate = items.map((item, idx) => ({
         schoolId,
@@ -193,15 +208,16 @@ const updateFeeStructure = async (req, res, next) => {
         concessionAllowed: item.concessionAllowed !== undefined ? item.concessionAllowed : true,
         status: 'ACTIVE'
       }));
-      await FeeStructureItem.insertMany(itemsToCreate);
+      // insertMany returns the created docs — no extra re-fetch needed
+      const updatedItems = await FeeStructureItem.insertMany(itemsToCreate);
+
+      const result = structure.toObject();
+      result.items = updatedItems;
+      return successResponse(res, result, 'Fee structure updated successfully');
     }
 
-    const updatedItems = await FeeStructureItem.find({ schoolId, feeStructureId: id })
-      .populate('feeCategoryId', 'name code categoryType');
-
     const result = structure.toObject();
-    result.items = updatedItems;
-
+    result.items = [];
     return successResponse(res, result, 'Fee structure updated successfully');
   } catch (error) {
     next(error);

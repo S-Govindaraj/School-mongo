@@ -20,8 +20,9 @@ const getStaff = async (req, res, next) => {
     }
 
     const staff = await Staff.find(filter)
-      .populate('userId')
-      .sort({ createdAt: -1 });
+      .populate('userId', 'name email phone status')
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(res, staff, 'Staff members retrieved successfully');
   } catch (error) {
@@ -67,19 +68,22 @@ const createStaff = async (req, res, next) => {
     } = req.body;
 
     const formattedEmpId = String(employeeId || '').trim().toUpperCase();
+    const fullName = name || `${firstName || ''} ${lastName || ''}`.trim() || `Staff ${formattedEmpId}`;
+    const staffEmail = String(email || `${formattedEmpId.toLowerCase()}@school.internal`).toLowerCase().trim();
 
-    const existing = await Staff.findOne({ schoolId, employeeId: formattedEmpId });
+    // Check if staff, user profile, and default role exist in parallel
+    const [existing, existingUser, defaultRole] = await Promise.all([
+      Staff.findOne({ schoolId, employeeId: formattedEmpId }).lean(),
+      User.findOne({ email: staffEmail }),
+      Role.findOne({ code: 'TEACHER' }).then(r => r || Role.findOne({ code: 'STAFF' })),
+    ]);
+
     if (existing && existing.status !== 'ARCHIVED') {
       throw new ValidationError(`Employee ID '${formattedEmpId}' already exists in this school.`);
     }
 
-    const fullName = name || `${firstName || ''} ${lastName || ''}`.trim() || `Staff ${formattedEmpId}`;
-    const staffEmail = String(email || `${formattedEmpId.toLowerCase()}@school.internal`).toLowerCase().trim();
-
-    // Check if user profile exists or create standard user account
-    let user = await User.findOne({ email: staffEmail });
+    let user = existingUser;
     if (!user) {
-      const defaultRole = await Role.findOne({ code: 'TEACHER' }) || await Role.findOne({ code: 'STAFF' });
       const hashedPassword = await bcrypt.hash('password123', 10);
       user = await User.create({
         schoolId,

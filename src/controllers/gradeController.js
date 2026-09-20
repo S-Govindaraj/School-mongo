@@ -20,7 +20,7 @@ const getGrades = async (req, res, next) => {
       filter.status = { $ne: 'ARCHIVED' };
     }
 
-    const grades = await Grade.find(filter).sort({ sequenceOrder: 1, name: 1 });
+    const grades = await Grade.find(filter).sort({ sequenceOrder: 1, name: 1 }).lean();
     return successResponse(res, grades, 'Grades retrieved successfully');
   } catch (error) {
     next(error);
@@ -46,17 +46,13 @@ const createGrade = async (req, res, next) => {
       throw new ValidationError('Display order must be a positive integer.');
     }
 
-    // Check code duplicate
-    const existingCode = await Grade.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } });
-    if (existingCode) {
-      throw new ValidationError(`Grade code '${formattedCode}' already exists in this school.`);
-    }
-
-    // Check display order duplicate
-    const existingOrder = await Grade.findOne({ schoolId, sequenceOrder: seqNum, status: { $ne: 'ARCHIVED' } });
-    if (existingOrder) {
-      throw new ValidationError(`Display order '${seqNum}' is already assigned to grade '${existingOrder.name}'.`);
-    }
+    // Parallel duplicate checks: code + order
+    const [existingCode, existingOrder] = await Promise.all([
+      Grade.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } }),
+      Grade.findOne({ schoolId, sequenceOrder: seqNum, status: { $ne: 'ARCHIVED' } }),
+    ]);
+    if (existingCode) throw new ValidationError(`Grade code '${formattedCode}' already exists in this school.`);
+    if (existingOrder) throw new ValidationError(`Display order '${seqNum}' is already assigned to grade '${existingOrder.name}'.`);
 
     const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
 

@@ -174,54 +174,88 @@ const saveBulkClassSubjects = async (req, res, next) => {
       throw new ValidationError('At least one class subject item is required.');
     }
 
-    const createdRecords = [];
+    // --- Validate marks + business rules (pure JS, no DB) ---
     for (const item of items) {
-      await validateClassSubjectData(schoolId, item);
+      const { passMarks = 35, maxMarks = 100, theoryMarks, practicalMarks, weeklyPeriods = 5, isElective = false, subjectGroup = '' } = item;
+      const numMax = Number(maxMarks);
+      const numPass = Number(passMarks);
+      if (numMax <= 0) throw new ValidationError('Max marks must be greater than 0.');
+      if (numPass < 0) throw new ValidationError('Pass marks cannot be negative.');
+      if (numPass > numMax) throw new ValidationError('Pass marks cannot exceed max marks.');
+      if (theoryMarks !== undefined && practicalMarks !== undefined) {
+        if (Number(theoryMarks) + Number(practicalMarks) !== numMax)
+          throw new ValidationError(`Theory + practical marks must equal max marks (${numMax}).`);
+      }
+      const numPeriods = Number(weeklyPeriods);
+      if (!Number.isInteger(numPeriods) || numPeriods <= 0 || numPeriods > 50)
+        throw new ValidationError('Weekly periods must be a positive integer between 1 and 50.');
+      if (isElective && (!subjectGroup || !String(subjectGroup).trim()))
+        throw new ValidationError('Elective subjects must specify an elective group.');
+    }
+
+    // --- Phase 1: batch-fetch all referenced entities in parallel ---
+    const allAYIds    = [...new Set(items.map(i => String(i.academicYearId)))];
+    const allGradeIds = [...new Set(items.map(i => String(i.gradeId)))];
+    const allSubjectIds = [...new Set(items.map(i => String(i.subjectId)))];
+
+    const [years, grades, subjects] = await Promise.all([
+      AcademicYear.find({ _id: { $in: allAYIds }, schoolId }).lean(),
+      Grade.find({ _id: { $in: allGradeIds }, schoolId }).lean(),
+      Subject.find({ _id: { $in: allSubjectIds }, schoolId }).lean(),
+    ]);
+
+    const yearSet    = new Set(years.map(y => String(y._id)));
+    const gradeSet   = new Set(grades.map(g => String(g._id)));
+    const subjectSet = new Set(subjects.map(s => String(s._id)));
+
+    // Validate each item against pre-fetched sets (zero extra queries)
+    for (const item of items) {
+      if (!yearSet.has(String(item.academicYearId)))
+        throw new ValidationError('Selected academic year does not exist in this school.');
+      if (!gradeSet.has(String(item.gradeId)))
+        throw new ValidationError('Selected grade does not exist in this school.');
+      if (!subjectSet.has(String(item.subjectId)))
+        throw new ValidationError('Selected subject does not exist in this school.');
+    }
+
+    // --- Phase 2: single bulkWrite upsert (replaces N × findOne + create/save) ---
+    const bulkOps = items.map((item) => {
       const {
-        academicYearId,
-        gradeId,
-        subjectId,
-        isMandatory = true,
-        isElective = false,
-        subjectGroup = '',
-        weeklyPeriods = 5,
-        passMarks = 35,
-        maxMarks = 100,
-        theoryMarks,
-        practicalMarks,
+        academicYearId, gradeId, subjectId,
+        isMandatory = true, isElective = false, subjectGroup = '',
+        weeklyPeriods = 5, passMarks = 35, maxMarks = 100,
+        theoryMarks, practicalMarks,
       } = item;
 
-      let record = await ClassSubject.findOne({ schoolId, academicYearId, gradeId, subjectId });
-      if (!record) {
-        record = await ClassSubject.create({
-          schoolId,
-          academicYearId,
-          gradeId,
-          subjectId,
-          isMandatory: Boolean(isMandatory),
-          isElective: Boolean(isElective),
-          subjectGroup: String(subjectGroup || '').trim(),
-          weeklyPeriods: Number(weeklyPeriods),
-          passMarks: Number(passMarks),
-          maxMarks: Number(maxMarks),
-          theoryMarks: theoryMarks !== undefined ? Number(theoryMarks) : undefined,
-          practicalMarks: practicalMarks !== undefined ? Number(practicalMarks) : undefined,
-          status: 'ACTIVE',
-        });
-      } else {
-        record.isMandatory = Boolean(isMandatory);
-        record.isElective = Boolean(isElective);
-        record.subjectGroup = String(subjectGroup || '').trim();
-        record.weeklyPeriods = Number(weeklyPeriods);
-        record.passMarks = Number(passMarks);
-        record.maxMarks = Number(maxMarks);
-        record.theoryMarks = theoryMarks !== undefined ? Number(theoryMarks) : undefined;
-        record.practicalMarks = practicalMarks !== undefined ? Number(practicalMarks) : undefined;
-        record.status = 'ACTIVE';
-        await record.save();
-      }
-      createdRecords.push(record);
-    }
+      return {
+        updateOne: {
+          filter: { schoolId, academicYearId, gradeId, subjectId },
+          update: {
+            $set: {
+              schoolId, academicYearId, gradeId, subjectId,
+              isMandatory: Boolean(isMandatory),
+              isElective: Boolean(isElective),
+              subjectGroup: String(subjectGroup || '').trim(),
+              weeklyPeriods: Number(weeklyPeriods),
+              passMarks: Number(passMarks),
+              maxMarks: Number(maxMarks),
+              ...(theoryMarks !== undefined && { theoryMarks: Number(theoryMarks) }),
+              ...(practicalMarks !== undefined && { practicalMarks: Number(practicalMarks) }),
+              status: 'ACTIVE',
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    await ClassSubject.bulkWrite(bulkOps);
+
+    // Fetch final state of upserted records for the response
+    const createdRecords = await ClassSubject.find({
+      schoolId,
+      $or: items.map(({ academicYearId, gradeId, subjectId }) => ({ academicYearId, gradeId, subjectId })),
+    }).lean();
 
     await logAuditEvent({
       schoolId,

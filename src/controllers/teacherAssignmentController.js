@@ -26,44 +26,28 @@ const validateTeacherAssignment = async (schoolId, data, currentId = null) => {
   const staffId = bodyStaffId || teacherId;
   if (!staffId) throw new ValidationError('Staff member ID is required.');
 
-  // 1. Verify Academic Year
-  const year = await AcademicYear.findOne({ _id: academicYearId, schoolId });
-  if (!year) throw new ValidationError('Selected academic year does not exist in this school.');
+  // Phase 1: all independent entity lookups in parallel (6 queries → 1 round-trip)
+  const [year, staff, grade, section, subject, classSubject] = await Promise.all([
+    AcademicYear.findOne({ _id: academicYearId, schoolId }),
+    Staff.findOne({ _id: staffId, schoolId }),
+    Grade.findOne({ _id: gradeId, schoolId }),
+    Section.findOne({ _id: sectionId, schoolId }),
+    Subject.findOne({ _id: subjectId, schoolId }),
+    ClassSubject.findOne({ schoolId, academicYearId, gradeId, subjectId, status: { $ne: 'ARCHIVED' } }),
+  ]);
 
-  // 2. Verify Teacher / Staff
-  const staff = await Staff.findOne({ _id: staffId, schoolId });
-  if (!staff) throw new ValidationError('Assigned teacher/staff member does not exist in this school.');
-  if (staff.status === 'INACTIVE' || staff.status === 'ARCHIVED') {
-    throw new ValidationError('Cannot assign an inactive or archived staff member.');
-  }
-
-  // 3. Verify Grade
-  const grade = await Grade.findOne({ _id: gradeId, schoolId });
-  if (!grade) throw new ValidationError('Selected grade does not exist in this school.');
-
-  // 4. Verify Section belongs to Grade
-  const section = await Section.findOne({ _id: sectionId, schoolId });
+  if (!year)    throw new ValidationError('Selected academic year does not exist in this school.');
+  if (!staff)   throw new ValidationError('Assigned teacher/staff member does not exist in this school.');
+  if (staff.status === 'INACTIVE' || staff.status === 'ARCHIVED')
+                throw new ValidationError('Cannot assign an inactive or archived staff member.');
+  if (!grade)   throw new ValidationError('Selected grade does not exist in this school.');
   if (!section) throw new ValidationError('Selected section does not exist in this school.');
-  if (String(section.gradeId) !== String(gradeId)) {
-    throw new ValidationError('Selected section does not belong to the selected grade.');
-  }
-
-  // 5. Verify Subject is configured for this class (Grade + Academic Year) in ClassSubject
-  const subject = await Subject.findOne({ _id: subjectId, schoolId });
+  if (String(section.gradeId) !== String(gradeId))
+                throw new ValidationError('Selected section does not belong to the selected grade.');
   if (!subject) throw new ValidationError('Selected subject does not exist in this school.');
+  if (!classSubject) throw new ValidationError('This subject is not configured for the selected class.');
 
-  const classSubject = await ClassSubject.findOne({
-    schoolId,
-    academicYearId,
-    gradeId,
-    subjectId,
-    status: { $ne: 'ARCHIVED' },
-  });
-  if (!classSubject) {
-    throw new ValidationError('This subject is not configured for the selected class.');
-  }
-
-  // 6. Date validation
+  // Date validation (pure JS — no DB call needed)
   if (startDate && endDate) {
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -73,41 +57,22 @@ const validateTeacherAssignment = async (schoolId, data, currentId = null) => {
     }
   }
 
-  // 7. Duplicate assignment check
-  const duplicateQuery = {
-    schoolId,
-    academicYearId,
-    gradeId,
-    sectionId,
-    subjectId,
-    staffId,
-    status: { $ne: 'ARCHIVED' },
-  };
+  // Phase 2: duplicate + primary conflict checks in parallel (2 queries → 1 round-trip)
+  const duplicateQuery = { schoolId, academicYearId, gradeId, sectionId, subjectId, staffId, status: { $ne: 'ARCHIVED' } };
   if (currentId) duplicateQuery._id = { $ne: currentId };
 
-  const existing = await TeacherAssignment.findOne(duplicateQuery);
-  if (existing) {
-    throw new ValidationError('This teacher is already assigned to this subject and section for the selected academic year.');
-  }
+  const primaryQuery = assignmentType === 'PRIMARY'
+    ? { schoolId, academicYearId, gradeId, sectionId, subjectId, assignmentType: 'PRIMARY', status: { $ne: 'ARCHIVED' } }
+    : null;
+  if (primaryQuery && currentId) primaryQuery._id = { $ne: currentId };
 
-  // 8. Primary teacher conflict check: Only one PRIMARY teacher per Academic Year + Section + Subject
-  if (assignmentType === 'PRIMARY') {
-    const primaryQuery = {
-      schoolId,
-      academicYearId,
-      gradeId,
-      sectionId,
-      subjectId,
-      assignmentType: 'PRIMARY',
-      status: { $ne: 'ARCHIVED' },
-    };
-    if (currentId) primaryQuery._id = { $ne: currentId };
+  const [existing, existingPrimary] = await Promise.all([
+    TeacherAssignment.findOne(duplicateQuery),
+    primaryQuery ? TeacherAssignment.findOne(primaryQuery) : Promise.resolve(null),
+  ]);
 
-    const existingPrimary = await TeacherAssignment.findOne(primaryQuery);
-    if (existingPrimary) {
-      throw new ValidationError('A primary teacher is already assigned to this class subject. Please assign as Assistant or Co-teacher.');
-    }
-  }
+  if (existing) throw new ValidationError('This teacher is already assigned to this subject and section for the selected academic year.');
+  if (existingPrimary) throw new ValidationError('A primary teacher is already assigned to this class subject. Please assign as Assistant or Co-teacher.');
 };
 
 const getTeacherAssignments = async (req, res, next) => {
@@ -127,12 +92,13 @@ const getTeacherAssignments = async (req, res, next) => {
     if (staffId) filter.staffId = staffId;
 
     const list = await TeacherAssignment.find(filter)
-      .populate('staffId')
-      .populate('gradeId')
-      .populate('sectionId')
-      .populate('subjectId')
-      .populate('academicYearId')
-      .sort({ createdAt: -1 });
+      .populate('staffId', 'firstName lastName employeeId designation email phone')
+      .populate('gradeId', 'name code')
+      .populate('sectionId', 'name code room')
+      .populate('subjectId', 'name code shortName')
+      .populate('academicYearId', 'name code isCurrent')
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(res, list, 'Teacher assignments retrieved successfully');
   } catch (error) {

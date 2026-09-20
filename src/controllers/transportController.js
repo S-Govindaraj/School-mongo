@@ -69,7 +69,7 @@ exports.getDashboard = async (req, res, next) => {
 exports.getVehicles = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext.schoolId;
-    const vehicles = await Vehicle.find({ schoolId }).sort({ createdAt: -1 });
+    const vehicles = await Vehicle.find({ schoolId }).sort({ createdAt: -1 }).lean();
     sendSuccess(res, vehicles);
   } catch (err) {
     next(err);
@@ -108,7 +108,7 @@ exports.updateVehicle = async (req, res, next) => {
 exports.getDrivers = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext.schoolId;
-    const drivers = await Driver.find({ schoolId }).sort({ createdAt: -1 });
+    const drivers = await Driver.find({ schoolId }).sort({ createdAt: -1 }).lean();
     sendSuccess(res, drivers);
   } catch (err) {
     next(err);
@@ -146,7 +146,8 @@ exports.getRoutes = async (req, res, next) => {
     const routes = await TransportRoute.find({ schoolId })
       .populate('assignedVehicleId')
       .populate('assignedDriverId')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     sendSuccess(res, routes);
   } catch (err) {
     next(err);
@@ -181,7 +182,7 @@ exports.getRouteStops = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext.schoolId;
     const { routeId } = req.params;
-    const stops = await RouteStop.find({ schoolId, routeId }).sort({ sequence: 1 });
+    const stops = await RouteStop.find({ schoolId, routeId }).sort({ sequence: 1 }).lean();
     sendSuccess(res, stops);
   } catch (err) {
     next(err);
@@ -206,7 +207,8 @@ exports.getAssignments = async (req, res, next) => {
       .populate('studentId', 'firstName lastName admissionNumber')
       .populate('routeId', 'routeName routeCode')
       .populate('routeStopId', 'stopName estimatedArrivalTime')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     sendSuccess(res, assignments);
   } catch (err) {
     next(err);
@@ -241,7 +243,8 @@ exports.getAttendance = async (req, res, next) => {
 
     const records = await TransportAttendance.find(filter)
       .populate('studentId', 'firstName lastName admissionNumber')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     sendSuccess(res, records);
   } catch (err) {
     next(err);

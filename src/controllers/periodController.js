@@ -34,31 +34,16 @@ const validatePeriod = async (schoolId, data, currentId = null) => {
     throw new ValidationError('Start time must be before end time.');
   }
 
-  // Check code uniqueness
+  // Parallel validation checks
   const codeQuery = { schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } };
   if (currentId) codeQuery._id = { $ne: currentId };
-  const existingCode = await Period.findOne(codeQuery);
-  if (existingCode) {
-    throw new ValidationError(`Period code '${formattedCode}' already exists in this school.`);
-  }
-
-  // Check sequence uniqueness
+  
   const seqQuery = { schoolId, sequence: seqNum, status: { $ne: 'ARCHIVED' } };
   if (currentId) seqQuery._id = { $ne: currentId };
-  const existingSeq = await Period.findOne(seqQuery);
-  if (existingSeq) {
-    throw new ValidationError(`Period sequence '${seqNum}' is already assigned to period '${existingSeq.name}'.`);
-  }
-
-  // Check name uniqueness
+  
   const nameQuery = { schoolId, name: trimmedName, status: { $ne: 'ARCHIVED' } };
   if (currentId) nameQuery._id = { $ne: currentId };
-  const existingName = await Period.findOne(nameQuery);
-  if (existingName) {
-    throw new ValidationError(`Period name '${trimmedName}' already exists in this school.`);
-  }
-
-  // Check timing overlap with other active periods in school
+  
   const overlapQuery = {
     schoolId,
     status: { $ne: 'ARCHIVED' },
@@ -69,7 +54,23 @@ const validatePeriod = async (schoolId, data, currentId = null) => {
     ],
   };
   if (currentId) overlapQuery._id = { $ne: currentId };
-  const overlapping = await Period.findOne(overlapQuery);
+
+  const [existingCode, existingSeq, existingName, overlapping] = await Promise.all([
+    Period.findOne(codeQuery).lean(),
+    Period.findOne(seqQuery).lean(),
+    Period.findOne(nameQuery).lean(),
+    Period.findOne(overlapQuery).lean(),
+  ]);
+
+  if (existingCode) {
+    throw new ValidationError(`Period code '${formattedCode}' already exists in this school.`);
+  }
+  if (existingSeq) {
+    throw new ValidationError(`Period sequence '${seqNum}' is already assigned to period '${existingSeq.name}'.`);
+  }
+  if (existingName) {
+    throw new ValidationError(`Period name '${trimmedName}' already exists in this school.`);
+  }
   if (overlapping) {
     throw new ValidationError(
       `Period timings overlap with existing period '${overlapping.name}' (${overlapping.startTime} - ${overlapping.endTime}).`
@@ -89,7 +90,7 @@ const getPeriods = async (req, res, next) => {
       filter.status = { $ne: 'ARCHIVED' };
     }
 
-    const periods = await Period.find(filter).sort({ sequence: 1 });
+    const periods = await Period.find(filter).sort({ sequence: 1 }).lean();
     return successResponse(res, periods, 'Periods retrieved successfully');
   } catch (error) {
     next(error);

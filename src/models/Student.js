@@ -41,5 +41,8 @@ const studentSchema = new mongoose.Schema(
 studentSchema.index({ schoolId: 1, studentNumber: 1 }, { unique: true });
 studentSchema.index({ schoolId: 1, admissionNumber: 1 }, { unique: true });
 studentSchema.index({ schoolId: 1, status: 1 });
+// Full-text search support for the name/phone/email search in getStudents
+studentSchema.index({ schoolId: 1, firstName: 1, lastName: 1 });
+studentSchema.index({ schoolId: 1, createdAt: -1 }); // default sort column
 
 module.exports = mongoose.model('Student', studentSchema);

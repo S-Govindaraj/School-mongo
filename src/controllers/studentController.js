@@ -49,34 +49,41 @@ const getStudents = async (req, res, next) => {
       ];
     }
 
-    // Filter by academic placement via Enrollment if gradeId, sectionId or academicYearId provided
-    if (gradeId || sectionId || academicYearId) {
-      const enrollQuery = { schoolId, isCurrent: true };
-      if (gradeId) enrollQuery.gradeId = gradeId;
-      if (sectionId) enrollQuery.sectionId = sectionId;
-      if (academicYearId) enrollQuery.academicYearId = academicYearId;
+    // Phase 1: enrollment pre-filter (if needed) + KPI counts all in parallel
+    const enrollFilterQuery = (gradeId || sectionId || academicYearId) ? (() => {
+      const q = { schoolId, isCurrent: true };
+      if (gradeId) q.gradeId = gradeId;
+      if (sectionId) q.sectionId = sectionId;
+      if (academicYearId) q.academicYearId = academicYearId;
+      return q;
+    })() : null;
 
-      const matchingEnrollments = await Enrollment.find(enrollQuery).select('studentId');
-      const studentIds = matchingEnrollments.map((e) => e.studentId);
-      query._id = { $in: studentIds };
-    }
-
-    const [totalRecords, students, currentEnrollments, totalApplicants, totalActive, totalAdmitted] = await Promise.all([
-      Student.countDocuments(query),
-      Student.find(query)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Enrollment.find({ schoolId, isCurrent: true })
-        .populate('gradeId', 'name code')
-        .populate('sectionId', 'name code')
-        .populate('academicYearId', 'name code')
-        .lean(),
+    const [matchingEnrollments, totalApplicants, totalActive, totalAdmitted] = await Promise.all([
+      enrollFilterQuery
+        ? Enrollment.find(enrollFilterQuery).select('studentId').lean()
+        : Promise.resolve(null),
       Student.countDocuments({ schoolId, status: 'APPLICANT' }),
       Student.countDocuments({ schoolId, status: 'ACTIVE' }),
       Student.countDocuments({ schoolId, status: 'ADMITTED' }),
     ]);
+
+    if (matchingEnrollments) {
+      query._id = { $in: matchingEnrollments.map((e) => e.studentId) };
+    }
+
+    // Phase 2: paginated student list + total count in parallel
+    const [totalRecords, students] = await Promise.all([
+      Student.countDocuments(query),
+      Student.find(query).sort({ createdAt: -1 }).skip(skip).limit(limitNum).lean(),
+    ]);
+
+    // Phase 3: fetch enrollments only for the current page of students (not all students school-wide)
+    const pageStudentIds = students.map((s) => s._id);
+    const currentEnrollments = await Enrollment.find({ schoolId, isCurrent: true, studentId: { $in: pageStudentIds } })
+      .populate('gradeId', 'name code')
+      .populate('sectionId', 'name code')
+      .populate('academicYearId', 'name code')
+      .lean();
 
     // Attach active enrollment placement to each student
     const enrollmentMap = {};
@@ -219,9 +226,9 @@ const createStudent = async (req, res, next) => {
       status: 'ADMITTED',
     });
 
-    // Create & link guardians if provided
+    // Create & link guardians in parallel (eliminates sequential findOne+create per guardian)
     if (guardians.length > 0) {
-      for (const gData of guardians) {
+      await Promise.all(guardians.map(async (gData) => {
         let guardian = await Guardian.findOne({ schoolId, phone: gData.phone, status: 'ACTIVE' });
         if (!guardian) {
           guardian = await Guardian.create({
@@ -244,7 +251,7 @@ const createStudent = async (req, res, next) => {
           isPrimary: gData.isPrimary || false,
           isEmergencyContact: gData.isEmergencyContact || false,
         });
-      }
+      }));
     }
 
     await logAuditEvent(req, 'CREATE', 'STUDENT', student._id, null, student);

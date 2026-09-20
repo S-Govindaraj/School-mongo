@@ -33,5 +33,11 @@ const invoiceSchema = new mongoose.Schema(
 invoiceSchema.index({ schoolId: 1, invoiceNumber: 1 }, { unique: true });
 invoiceSchema.index({ schoolId: 1, academicYearId: 1, studentId: 1, dueDate: 1 });
 invoiceSchema.index({ schoolId: 1, academicYearId: 1, studentId: 1, billingPeriod: 1 });
+// Open invoice query in collectPayment (auto-allocation path) — most critical finance query
+invoiceSchema.index({ schoolId: 1, studentId: 1, status: 1, dueDate: 1 });
+// Bulk invoice dup-check: studentId $in + billingPeriod + status
+invoiceSchema.index({ schoolId: 1, billingPeriod: 1, status: 1, studentId: 1 });
+// Default sort + list queries
+invoiceSchema.index({ schoolId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

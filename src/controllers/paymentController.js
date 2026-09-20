@@ -81,18 +81,19 @@ const getPaymentById = async (req, res, next) => {
     const schoolId = req.schoolContext.schoolId;
     const { id } = req.params;
 
-    const payment = await Payment.findOne({ _id: id, schoolId })
-      .populate('studentId', 'firstName lastName admissionNumber studentNumber phone email')
-      .populate('receivedBy', 'name email');
+    // Fetch payment + allocations + receipt in parallel (3 queries → 1 round-trip)
+    const [payment, allocations, receipt] = await Promise.all([
+      Payment.findOne({ _id: id, schoolId })
+        .populate('studentId', 'firstName lastName admissionNumber studentNumber phone email')
+        .populate('receivedBy', 'name email'),
+      PaymentAllocation.find({ schoolId, paymentId: id })
+        .populate('invoiceId', 'invoiceNumber billingPeriod totalAmount paidAmount balanceAmount status'),
+      Receipt.findOne({ schoolId, paymentId: id }),
+    ]);
 
     if (!payment) {
       return errorResponse(res, 'Payment not found', 404, 'NOT_FOUND');
     }
-
-    const allocations = await PaymentAllocation.find({ schoolId, paymentId: id })
-      .populate('invoiceId', 'invoiceNumber billingPeriod totalAmount paidAmount balanceAmount status');
-
-    const receipt = await Receipt.findOne({ schoolId, paymentId: id });
 
     const result = payment.toObject();
     result.allocations = allocations;
@@ -194,36 +195,40 @@ const collectPayment = async (req, res, next) => {
     for (const { invoice, allocAmount } of targetInvoices) {
       if (allocAmount <= 0) continue;
 
-      const allocation = await PaymentAllocation.create({
+      // Update invoice balances in memory before bulk-saving
+      invoice.paidAmount += allocAmount;
+      invoice.balanceAmount = Math.max(0, invoice.totalAmount - invoice.paidAmount);
+      invoice.status = invoice.balanceAmount === 0 ? 'PAID' : 'PARTIALLY_PAID';
+      invoice.updatedBy = userId;
+
+      allocatedInvoiceReceiptDetails.push({
+        invoiceId: invoice._id,
+        invoiceNumber: invoice.invoiceNumber,
+        allocatedAmount: allocAmount,
+      });
+    }
+
+    // Create all allocations + save all invoices in parallel
+    const allocationDocs = targetInvoices
+      .filter(({ allocAmount }) => allocAmount > 0)
+      .map(({ invoice, allocAmount }) => ({
         schoolId,
         paymentId: payment._id,
         invoiceId: invoice._id,
         studentId,
         allocatedAmount: allocAmount,
         allocationDate: new Date(),
-        allocatedBy: userId
-      });
+        allocatedBy: userId,
+      }));
 
-      createdAllocations.push(allocation);
+    const [insertedAllocations] = await Promise.all([
+      PaymentAllocation.insertMany(allocationDocs),
+      ...targetInvoices
+        .filter(({ allocAmount }) => allocAmount > 0)
+        .map(({ invoice }) => invoice.save()),
+    ]);
 
-      // Update Invoice
-      invoice.paidAmount += allocAmount;
-      invoice.balanceAmount = Math.max(0, invoice.totalAmount - invoice.paidAmount);
-
-      if (invoice.balanceAmount === 0) {
-        invoice.status = 'PAID';
-      } else {
-        invoice.status = 'PARTIALLY_PAID';
-      }
-      invoice.updatedBy = userId;
-      await invoice.save();
-
-      allocatedInvoiceReceiptDetails.push({
-        invoiceId: invoice._id,
-        invoiceNumber: invoice.invoiceNumber,
-        allocatedAmount: allocAmount
-      });
-    }
+    createdAllocations.push(...insertedAllocations);
 
     // Ledger Entry (CREDIT)
     const lastLedger = await StudentLedger.findOne({ schoolId, studentId })

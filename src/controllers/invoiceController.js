@@ -103,23 +103,21 @@ const getInvoiceById = async (req, res, next) => {
     const schoolId = req.schoolContext.schoolId;
     const { id } = req.params;
 
-    const invoice = await Invoice.findOne({ _id: id, schoolId })
-      .populate('studentId', 'firstName lastName admissionNumber studentNumber phone email')
-      .populate('enrollmentId', 'gradeId sectionId')
-      .populate('academicYearId', 'name code');
+    // Fetch invoice + items + allocations in parallel (3 queries → 1 round-trip)
+    const [invoice, items, allocations] = await Promise.all([
+      Invoice.findOne({ _id: id, schoolId })
+        .populate('studentId', 'firstName lastName admissionNumber studentNumber phone email')
+        .populate('enrollmentId', 'gradeId sectionId')
+        .populate('academicYearId', 'name code'),
+      InvoiceItem.find({ schoolId, invoiceId: id })
+        .populate('feeCategoryId', 'name code'),
+      PaymentAllocation.find({ schoolId, invoiceId: id })
+        .populate({ path: 'paymentId', select: 'paymentNumber paymentDate paymentMethod referenceNumber status' }),
+    ]);
 
     if (!invoice) {
       return errorResponse(res, 'Invoice not found', 404, 'NOT_FOUND');
     }
-
-    const items = await InvoiceItem.find({ schoolId, invoiceId: id })
-      .populate('feeCategoryId', 'name code');
-
-    const allocations = await PaymentAllocation.find({ schoolId, invoiceId: id })
-      .populate({
-        path: 'paymentId',
-        select: 'paymentNumber paymentDate paymentMethod referenceNumber status'
-      });
 
     const result = invoice.toObject();
     result.items = items;
@@ -169,21 +167,37 @@ const generateBulkInvoices = async (req, res, next) => {
       return errorResponse(res, 'No active student fee assignments found for the selection', 400, 'NO_ASSIGNMENTS');
     }
 
+    // Pre-fetch all data needed inside the loop in parallel (eliminates N+1 per student)
+    const allStudentIds = assignments.map(a => a.studentId);
+    const [existingInvoicesArr, allConcessionsArr, lastLedgersArr] = await Promise.all([
+      Invoice.find({ schoolId, studentId: { $in: allStudentIds }, billingPeriod, status: { $ne: 'CANCELLED' } })
+        .select('studentId').lean(),
+      FeeConcession.find({ schoolId, studentId: { $in: allStudentIds }, status: 'APPROVED' }).lean(),
+      StudentLedger.aggregate([
+        { $match: { schoolId: schoolId.toString ? schoolId : String(schoolId), studentId: { $in: allStudentIds.map(id => id.toString ? id : String(id)) } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$studentId', balance: { $first: '$balance' } } },
+      ]),
+    ]);
+
+    // Build lookup maps for O(1) access inside the loop
+    const existingInvoiceSet = new Set(existingInvoicesArr.map(i => String(i.studentId)));
+    const concessionsByStudent = new Map();
+    for (const c of allConcessionsArr) {
+      const key = String(c.studentId);
+      if (!concessionsByStudent.has(key)) concessionsByStudent.set(key, []);
+      concessionsByStudent.get(key).push(c);
+    }
+    const ledgerBalanceMap = new Map(lastLedgersArr.map(r => [String(r._id), r.balance]));
+
     const generatedInvoices = [];
     const skippedStudents = [];
     let grossTotalAll = 0;
     let netTotalAll = 0;
 
     for (const assignment of assignments) {
-      // Check duplicate invoice for student + billingPeriod + assignment
-      const existingInv = await Invoice.findOne({
-        schoolId,
-        studentId: assignment.studentId,
-        billingPeriod,
-        status: { $ne: 'CANCELLED' }
-      });
-
-      if (existingInv) {
+      // Skip if duplicate invoice already exists (uses pre-fetched set — zero extra queries)
+      if (existingInvoiceSet.has(String(assignment.studentId))) {
         skippedStudents.push(assignment.studentId);
         continue;
       }
@@ -194,12 +208,8 @@ const generateBulkInvoices = async (req, res, next) => {
       let totalConcession = 0;
       let totalFine = 0;
 
-      // Check active concessions for student
-      const concessions = await FeeConcession.find({
-        schoolId,
-        studentId: assignment.studentId,
-        status: 'APPROVED'
-      });
+      // Use pre-fetched concessions map (zero extra queries)
+      const concessions = concessionsByStudent.get(String(assignment.studentId)) || [];
 
       const invoiceItemsData = [];
 
@@ -280,12 +290,11 @@ const generateBulkInvoices = async (req, res, next) => {
       const itemsToCreate = invoiceItemsData.map(i => ({ ...i, invoiceId: invoice._id }));
       await InvoiceItem.insertMany(itemsToCreate);
 
-      // Create Ledger entry (DEBIT)
-      const lastLedger = await StudentLedger.findOne({ schoolId, studentId: assignment.studentId })
-        .sort({ createdAt: -1 });
-
-      const prevBalance = lastLedger ? lastLedger.balance : 0;
+      // Create Ledger entry (DEBIT) — use pre-fetched balance map (zero extra queries)
+      const prevBalance = ledgerBalanceMap.get(String(assignment.studentId)) ?? 0;
       const newBalance = prevBalance + totalAmount; // Fee invoice increases balance owed
+      // Update map so subsequent invoices for the same student use the running balance
+      ledgerBalanceMap.set(String(assignment.studentId), newBalance);
 
       await StudentLedger.create({
         schoolId,

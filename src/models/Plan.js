@@ -49,7 +49,6 @@ const planSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-planSchema.index({ code: 1 }, { unique: true });
 planSchema.index({ status: 1 });
 
 module.exports = mongoose.model('Plan', planSchema);

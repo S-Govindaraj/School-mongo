@@ -194,9 +194,9 @@ const admitStudent = async (req, res, next) => {
       status: 'ADMITTED',
     });
 
-    // Create & link guardians
+    // Create & link guardians in parallel (eliminates sequential findOne+create per guardian)
     if (admission.guardianData && admission.guardianData.length > 0) {
-      for (const gData of admission.guardianData) {
+      await Promise.all(admission.guardianData.map(async (gData) => {
         let guardian = await Guardian.findOne({ schoolId, phone: gData.phone, status: 'ACTIVE' });
         if (!guardian) {
           guardian = await Guardian.create({
@@ -218,7 +218,7 @@ const admitStudent = async (req, res, next) => {
           isPrimary: gData.isPrimary || false,
           isEmergencyContact: gData.isEmergencyContact || false,
         });
-      }
+      }));
     }
 
     admission.status = 'ADMITTED';

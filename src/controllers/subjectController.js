@@ -18,7 +18,7 @@ const getSubjects = async (req, res, next) => {
       filter.status = { $ne: 'ARCHIVED' };
     }
 
-    const subjects = await Subject.find(filter).sort({ name: 1 });
+    const subjects = await Subject.find(filter).sort({ name: 1 }).lean();
     return successResponse(res, subjects, 'Subjects retrieved successfully');
   } catch (error) {
     next(error);
@@ -40,19 +40,20 @@ const createSubject = async (req, res, next) => {
       throw new ValidationError('Subject code is required.');
     }
 
-    // Duplicate code check
-    const existingCode = await Subject.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } });
+    // Parallel duplicate checks
+    const normalizedName = trimmedName.toLowerCase();
+    const [existingCode, existingName] = await Promise.all([
+      Subject.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } }).lean(),
+      Subject.findOne({
+        schoolId,
+        $or: [{ normalizedName }, { name: new RegExp(`^${trimmedName}$`, 'i') }],
+        status: { $ne: 'ARCHIVED' },
+      }).lean(),
+    ]);
+    
     if (existingCode) {
       throw new ValidationError(`Subject code '${formattedCode}' already exists in this school.`);
     }
-
-    // Case-insensitive duplicate name check
-    const normalizedName = trimmedName.toLowerCase();
-    const existingName = await Subject.findOne({
-      schoolId,
-      $or: [{ normalizedName }, { name: new RegExp(`^${trimmedName}$`, 'i') }],
-      status: { $ne: 'ARCHIVED' },
-    });
     if (existingName) {
       throw new ValidationError(`Subject '${existingName.name}' already exists in this school.`);
     }

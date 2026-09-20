@@ -34,7 +34,8 @@ const getFeeAssignments = async (req, res, next) => {
         .populate('feeStructureId', 'name code billingFrequency')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limitNum),
+        .limit(limitNum)
+        .lean(),
       StudentFeeAssignment.countDocuments(query)
     ]);
 
@@ -106,25 +107,30 @@ const assignFeeToStudents = async (req, res, next) => {
       return errorResponse(res, 'No target students selected or found', 400, 'VALIDATION_ERROR');
     }
 
-    const assignedResults = [];
+    // Pre-fetch all enrollments for target students in one query (eliminates N+1)
+    const enrollmentDocs = await Enrollment.find({
+      schoolId, academicYearId, studentId: { $in: targetStudentIds }, isCurrent: true,
+    }).select('studentId _id').lean();
+    const enrollmentMap = new Map(enrollmentDocs.map(e => [String(e.studentId), e._id]));
 
-    for (const sId of targetStudentIds) {
-      const enrollment = await Enrollment.findOne({ schoolId, studentId: sId, isCurrent: true });
-
-      const assignment = await StudentFeeAssignment.findOneAndUpdate(
-        { schoolId, academicYearId, studentId: sId, feeStructureId },
-        {
-          enrollmentId: enrollment?._id,
-          assignedItems: snapshottedItems,
-          effectiveFrom: effectiveFrom ? new Date(effectiveFrom) : new Date(),
-          effectiveTo: effectiveTo ? new Date(effectiveTo) : undefined,
-          status: 'ACTIVE',
-          assignedBy: userId
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      assignedResults.push(assignment);
-    }
+    // Bulk upsert all fee assignments in parallel
+    const assignedResults = await Promise.all(
+      targetStudentIds.map((sId) => {
+        const enrollmentId = enrollmentMap.get(String(sId));
+        return StudentFeeAssignment.findOneAndUpdate(
+          { schoolId, academicYearId, studentId: sId, feeStructureId },
+          {
+            enrollmentId: enrollmentId || null,
+            assignedItems: snapshottedItems,
+            effectiveFrom: effectiveFrom ? new Date(effectiveFrom) : new Date(),
+            effectiveTo: effectiveTo ? new Date(effectiveTo) : undefined,
+            status: 'ACTIVE',
+            assignedBy: userId,
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      })
+    );
 
     return successResponse(res, { assignedCount: assignedResults.length, assignments: assignedResults }, 'Student fee assignment completed successfully', 201);
   } catch (error) {

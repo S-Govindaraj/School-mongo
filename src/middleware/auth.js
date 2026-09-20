@@ -27,7 +27,10 @@ const authenticate = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, getJwtSecret());
-    const user = await User.findById(decoded.userId).populate('roleId');
+    const user = await User.findById(decoded.userId)
+      .select('name email phone status schoolId roleId')
+      .populate('roleId', 'name code permissions')
+      .lean();
 
     if (!user || user.status !== 'ACTIVE') {
       throw new AuthenticationError('User profile inactive or unauthenticated.');
@@ -54,7 +57,10 @@ const optionalAuthenticate = async (req, res, next) => {
     if (token) {
       try {
         const decoded = jwt.verify(token, getJwtSecret());
-        const user = await User.findById(decoded.userId).populate('roleId');
+        const user = await User.findById(decoded.userId)
+          .select('name email phone status schoolId roleId')
+          .populate('roleId', 'name code permissions')
+          .lean();
         if (user && user.status === 'ACTIVE') {
           req.user = user;
           req.schoolContext = {

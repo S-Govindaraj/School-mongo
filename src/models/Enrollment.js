@@ -20,5 +20,9 @@ const enrollmentSchema = new mongoose.Schema(
 
 enrollmentSchema.index({ schoolId: 1, studentId: 1, academicYearId: 1 });
 enrollmentSchema.index({ schoolId: 1, academicYearId: 1, gradeId: 1, sectionId: 1 });
+// isCurrent queries are the hottest path — used in every student list and attendance fetch
+enrollmentSchema.index({ schoolId: 1, isCurrent: 1, studentId: 1 });
+enrollmentSchema.index({ schoolId: 1, isCurrent: 1, gradeId: 1, sectionId: 1 });
+enrollmentSchema.index({ schoolId: 1, isCurrent: 1, academicYearId: 1 });
 
 module.exports = mongoose.model('Enrollment', enrollmentSchema);

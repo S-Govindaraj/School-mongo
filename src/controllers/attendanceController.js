@@ -139,20 +139,25 @@ const markBulkAttendance = async (req, res, next) => {
     const allStatuses = await AttendanceStatus.find({ schoolId });
     const statusMap = new Map(allStatuses.map((s) => [String(s._id), s]));
 
+    // Pre-fetch all enrollments for the submitted students in one query (eliminates N+1)
+    const submittedStudentIds = records.map((r) => r.studentId);
+    const activeEnrollments = await Enrollment.find({
+      schoolId,
+      studentId: { $in: submittedStudentIds },
+      gradeId,
+      sectionId,
+      academicYearId,
+      status: { $in: ['ENROLLED', 'ACTIVE'] },
+    });
+    const enrollmentMap = new Map(activeEnrollments.map((e) => [String(e.studentId), e]));
+
     // 2. Process records idempotently using bulkWrite
     const bulkOps = [];
     for (const item of records) {
       const { studentId, enrollmentId, statusId, remarks } = item;
 
-      // Validate student enrollment in this section & academic year
-      const activeEnrollment = await Enrollment.findOne({
-        schoolId,
-        studentId,
-        gradeId,
-        sectionId,
-        academicYearId,
-        status: { $in: ['ENROLLED', 'ACTIVE'] },
-      });
+      // Validate student enrollment using pre-fetched map (zero extra DB queries)
+      const activeEnrollment = enrollmentMap.get(String(studentId));
       if (!activeEnrollment) {
         throw new ValidationError(`Student ${studentId} is not enrolled in this section for the selected academic year.`);
       }

@@ -22,8 +22,9 @@ const getAcademicTerms = async (req, res, next) => {
     }
 
     const terms = await AcademicTerm.find(filter)
-      .populate('academicYearId')
-      .sort({ sequence: 1, startDate: 1 });
+      .populate('academicYearId', 'name code startDate endDate isCurrent')
+      .sort({ sequence: 1, startDate: 1 })
+      .lean();
 
     return successResponse(res, terms, 'Academic terms retrieved');
   } catch (error) {
@@ -66,47 +67,28 @@ const createAcademicTerm = async (req, res, next) => {
       );
     }
 
-    // Check duplicate code within same academic year
-    const existingCode = await AcademicTerm.findOne({
-      schoolId,
-      academicYearId,
-      code: formattedCode,
-      status: { $ne: 'ARCHIVED' },
-    });
-    if (existingCode) {
-      throw new ValidationError(`Term code '${formattedCode}' already exists in this academic year.`);
-    }
-
-    // Sequence must be positive integer and unique within academic year
+    // Sequence must be positive integer
     const seqNum = Number(sequence);
     if (!Number.isInteger(seqNum) || seqNum <= 0) {
       throw new ValidationError('Term sequence must be a positive integer.');
     }
 
-    const existingSeq = await AcademicTerm.findOne({
-      schoolId,
-      academicYearId,
-      sequence: seqNum,
-      status: { $ne: 'ARCHIVED' },
-    });
-    if (existingSeq) {
-      throw new ValidationError(`Term sequence '${seqNum}' is already assigned to term '${existingSeq.name}'.`);
-    }
-
-    // Overlap validation within same academic year
-    const overlappingTerm = await AcademicTerm.findOne({
-      schoolId,
-      academicYearId,
-      status: { $ne: 'ARCHIVED' },
-      $or: [
-        { startDate: { $lte: start }, endDate: { $gte: start } },
-        { startDate: { $lte: end }, endDate: { $gte: end } },
-        { startDate: { $gte: start }, endDate: { $lte: end } },
-      ],
-    });
-    if (overlappingTerm) {
-      throw new ValidationError(`Term dates overlap with existing term '${overlappingTerm.name}'.`);
-    }
+    // Run duplicate code, sequence, and overlap checks in parallel
+    const [existingCode, existingSeq, overlappingTerm] = await Promise.all([
+      AcademicTerm.findOne({ schoolId, academicYearId, code: formattedCode, status: { $ne: 'ARCHIVED' } }),
+      AcademicTerm.findOne({ schoolId, academicYearId, sequence: seqNum, status: { $ne: 'ARCHIVED' } }),
+      AcademicTerm.findOne({
+        schoolId, academicYearId, status: { $ne: 'ARCHIVED' },
+        $or: [
+          { startDate: { $lte: start }, endDate: { $gte: start } },
+          { startDate: { $lte: end }, endDate: { $gte: end } },
+          { startDate: { $gte: start }, endDate: { $lte: end } },
+        ],
+      }),
+    ]);
+    if (existingCode) throw new ValidationError(`Term code '${formattedCode}' already exists in this academic year.`);
+    if (existingSeq) throw new ValidationError(`Term sequence '${seqNum}' is already assigned to term '${existingSeq.name}'.`);
+    if (overlappingTerm) throw new ValidationError(`Term dates overlap with existing term '${overlappingTerm.name}'.`);
 
     if (isCurrent) {
       await AcademicTerm.updateMany({ schoolId, academicYearId }, { isCurrent: false });
