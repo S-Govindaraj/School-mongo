@@ -8,13 +8,46 @@ const academicYearSchema = new mongoose.Schema(
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     isCurrent: { type: Boolean, default: false },
-    status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'ACTIVE' },
+    status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'INACTIVE' },
   },
   { timestamps: true }
 );
 
+// Pre-save normalization and business rule validation
+academicYearSchema.pre('validate', function (next) {
+  if (this.code) {
+    const match = String(this.code).trim().match(/^(\d{4})\s*-\s*(\d{4})$/);
+    if (match) {
+      const start = parseInt(match[1], 10);
+      const end = parseInt(match[2], 10);
+      if (end !== start + 1) {
+        return next(new Error('The ending year must be exactly one year after the starting year.'));
+      }
+      this.code = `${match[1]}-${match[2]}`;
+      if (!this.name || this.name.trim() === '' || /^(\d{4})\s*-\s*(\d{4})$/.test(this.name.trim())) {
+        this.name = `${match[1]}-${match[2]}`;
+      }
+    } else {
+      this.code = String(this.code).trim();
+    }
+  }
+  if (this.name) {
+    const nameMatch = String(this.name).trim().match(/^(\d{4})\s*-\s*(\d{4})$/);
+    if (nameMatch) {
+      this.name = `${nameMatch[1]}-${nameMatch[2]}`;
+    } else {
+      this.name = String(this.name).trim();
+    }
+  }
+  next();
+});
+
+// Database Constraints
 academicYearSchema.index({ schoolId: 1, code: 1 }, { unique: true });
-academicYearSchema.index({ schoolId: 1, isCurrent: 1 });
+academicYearSchema.index({ schoolId: 1, name: 1 }, { unique: true });
+academicYearSchema.index(
+  { schoolId: 1, isCurrent: 1 },
+  { unique: true, partialFilterExpression: { isCurrent: true } }
+);
 
 module.exports = mongoose.model('AcademicYear', academicYearSchema);
-

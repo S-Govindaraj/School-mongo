@@ -39,7 +39,42 @@ const errorHandlerMiddleware = (err, req, res, next) => {
     statusCode = 409;
     errorCode = 'DUPLICATE_RESOURCE';
     const keys = Object.keys(err.keyPattern || {});
-    message = `A resource with duplicate field(s) [${keys.join(', ')}] already exists.`;
+    const val = err.keyValue ? Object.values(err.keyValue)[0] : '';
+
+    if (keys.includes('isCurrent')) {
+      message = 'Only one active academic year can be set for a school at a time.';
+    } else if ((err.message && err.message.includes('academicyears')) || keys.includes('code') && keys.includes('schoolId')) {
+      const displayVal = typeof val === 'string' && /^\d{4}-\d{4}$/.test(val)
+        ? val.replace('-', ' - ')
+        : val;
+      message = `Academic year ${displayVal || ''} already exists.`;
+    } else if (err.message && err.message.includes('academicterms')) {
+      message = 'Academic term code or sequence already exists in this academic year.';
+    } else if (err.message && err.message.includes('grades')) {
+      message = keys.includes('sequenceOrder')
+        ? 'A grade with this display order already exists.'
+        : `Grade code '${val}' already exists.`;
+    } else if (err.message && err.message.includes('sections')) {
+      message = 'Section with this name or code already exists in this grade.';
+    } else if (err.message && err.message.includes('subjects')) {
+      message = `Subject code or name '${val}' already exists.`;
+    } else if (err.message && err.message.includes('classsubjects')) {
+      message = 'This subject is already configured for the selected academic year and grade.';
+    } else if (err.message && err.message.includes('timetables')) {
+      if (keys.includes('sectionId')) {
+        message = 'This class already has a timetable entry for the selected period.';
+      } else if (keys.includes('teacherId')) {
+        message = 'This teacher is already assigned during the selected period.';
+      } else if (keys.includes('roomNumber')) {
+        message = 'This room is already occupied during the selected period.';
+      } else {
+        message = 'A conflicting timetable entry already exists.';
+      }
+    } else if (err.message && err.message.includes('attendancerecords')) {
+      message = 'Attendance has already been recorded for this student.';
+    } else {
+      message = `A resource with duplicate field(s) [${keys.join(', ')}] already exists.`;
+    }
   }
 
   // Log error with complete context (Section 27)

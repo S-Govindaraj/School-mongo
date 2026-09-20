@@ -1,10 +1,68 @@
+const mongoose = require('mongoose');
 const AcademicYear = require('../models/AcademicYear');
 const AcademicTerm = require('../models/AcademicTerm');
 const ClassSubject = require('../models/ClassSubject');
 const TeacherAssignment = require('../models/TeacherAssignment');
+const Enrollment = require('../models/Enrollment');
+const Timetable = require('../models/Timetable');
+const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceSession = require('../models/AttendanceSession');
+const FeeStructure = require('../models/FeeStructure');
+const ExamResult = require('../models/ExamResult');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+
+// Helper to normalize input like "2026 - 2027" or "2026-2027" to "2026-2027"
+const parseAndNormalizeYear = (rawYear) => {
+  if (!rawYear || typeof rawYear !== 'string') {
+    throw new ValidationError('Enter a valid academic year such as 2026 - 2027.');
+  }
+  const trimmed = rawYear.trim();
+  const match = trimmed.match(/^(\d{4})\s*-\s*(\d{4})$/);
+  if (!match) {
+    throw new ValidationError('Enter a valid academic year such as 2026 - 2027.');
+  }
+  const start = parseInt(match[1], 10);
+  const end = parseInt(match[2], 10);
+  if (end !== start + 1) {
+    throw new ValidationError('The ending year must be exactly one year after the starting year.');
+  }
+  return {
+    canonical: `${match[1]}-${match[2]}`,
+    display: `${match[1]} - ${match[2]}`,
+    startYear: start,
+    endYear: end,
+  };
+};
+
+const withTransactionOrFallback = async (operation) => {
+  let session = null;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    const result = await operation(session);
+    await session.commitTransaction();
+    return result;
+  } catch (err) {
+    if (session) {
+      try {
+        await session.abortTransaction();
+      } catch (_) {}
+    }
+    // If running in standalone Mongo (e.g., local dev without replica set)
+    if (err.message && err.message.includes('replica set member or mongos')) {
+      return await operation(null);
+    }
+    throw err;
+  } finally {
+    if (session) {
+      try {
+        await session.endSession();
+      } catch (_) {}
+    }
+  }
+};
 
 const getAcademicYears = async (req, res, next) => {
   try {
@@ -12,16 +70,13 @@ const getAcademicYears = async (req, res, next) => {
     const { status, includeArchived } = req.query;
 
     const filter = { schoolId };
-
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
     }
-    // Default: includes ALL (ACTIVE, INACTIVE, and ARCHIVED) so management table can view full lifecycle
 
     const years = await AcademicYear.find(filter).sort({ startDate: -1 });
-
     return successResponse(res, years, 'Academic years retrieved');
   } catch (error) {
     next(error);
@@ -35,7 +90,6 @@ const getCurrentAcademicYear = async (req, res, next) => {
     if (!current) {
       current = await AcademicYear.findOne({ schoolId, status: 'ACTIVE' }).sort({ startDate: -1 });
     }
-
     return successResponse(res, current, 'Current academic year retrieved');
   } catch (error) {
     next(error);
@@ -45,43 +99,83 @@ const getCurrentAcademicYear = async (req, res, next) => {
 const createAcademicYear = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { name, code, startDate, endDate, isCurrent } = req.body;
+    const { name, code, startDate, endDate, isCurrent, status: requestedStatus } = req.body;
+
+    // Normalization & business rule validation
+    const normalized = parseAndNormalizeYear(code || name);
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new ValidationError('Start date and end date must be valid dates.');
+    }
     if (start >= end) {
-      throw new ValidationError('Start date must be before end date.');
+      throw new ValidationError('End date must be after the start date.');
     }
 
-    const trimmedCode = String(code || '').trim();
+    // Check duplicate by normalized canonical code or name within school
     const existing = await AcademicYear.findOne({
       schoolId,
-      code: trimmedCode,
+      $or: [{ code: normalized.canonical }, { name: normalized.canonical }, { name: normalized.display }],
       status: { $ne: 'ARCHIVED' },
     });
     if (existing) {
-      throw new ValidationError(`Academic year with code "${trimmedCode}" already exists in this school.`);
+      throw new ValidationError(`Academic year ${normalized.display} already exists.`);
     }
 
-    if (isCurrent) {
-      await AcademicYear.updateMany({ schoolId }, { isCurrent: false });
-    }
-
-    const year = await AcademicYear.create({
+    // Check date overlap with existing active/inactive non-archived years
+    const overlapping = await AcademicYear.findOne({
       schoolId,
-      name,
-      code: String(code || '').trim(),
-      startDate: start,
-      endDate: end,
-      isCurrent: Boolean(isCurrent),
-      status: 'ACTIVE',
+      status: { $ne: 'ARCHIVED' },
+      $or: [
+        { startDate: { $lte: start }, endDate: { $gte: start } },
+        { startDate: { $lte: end }, endDate: { $gte: end } },
+        { startDate: { $gte: start }, endDate: { $lte: end } },
+      ],
+    });
+    if (overlapping) {
+      throw new ValidationError(`Academic year dates overlap with existing academic year '${overlapping.code}'.`);
+    }
+
+    // Critical Business Rule: Default status is INACTIVE unless isCurrent / Set as Active explicitly selected
+    const shouldBeActive = Boolean(isCurrent) || requestedStatus === 'ACTIVE';
+    const status = shouldBeActive ? 'ACTIVE' : 'INACTIVE';
+    const finalIsCurrent = shouldBeActive;
+
+    const year = await withTransactionOrFallback(async (session) => {
+      const opts = session ? { session } : {};
+      if (finalIsCurrent) {
+        // Atomically deactivate previous active academic year
+        await AcademicYear.updateMany(
+          { schoolId, isCurrent: true },
+          { $set: { isCurrent: false, status: 'INACTIVE' } },
+          opts
+        );
+      }
+
+      const [newYear] = await AcademicYear.create(
+        [
+          {
+            schoolId,
+            name: normalized.canonical,
+            code: normalized.canonical,
+            startDate: start,
+            endDate: end,
+            isCurrent: finalIsCurrent,
+            status,
+          },
+        ],
+        opts
+      );
+
+      return newYear;
     });
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'CREATE',
       entity: 'AcademicYear',
       entityId: year._id.toString(),
@@ -109,36 +203,102 @@ const updateAcademicYear = async (req, res, next) => {
 
     const oldValues = year.toObject();
 
-    if (req.body.isCurrent && !year.isCurrent) {
-      await AcademicYear.updateMany({ schoolId }, { isCurrent: false });
-    }
+    // If attempting to edit code or name, check if historical dependent records exist
+    if (req.body.code || req.body.name) {
+      const targetCode = req.body.code || req.body.name;
+      const normalized = parseAndNormalizeYear(targetCode);
 
-    if (req.body.code && String(req.body.code).trim() !== year.code) {
-      const trimmedCode = String(req.body.code).trim();
-      const existing = await AcademicYear.findOne({
-        _id: { $ne: id },
-        schoolId,
-        code: trimmedCode,
-        status: { $ne: 'ARCHIVED' },
-      });
-      if (existing) {
-        throw new ValidationError(`Academic year with code "${trimmedCode}" already exists in this school.`);
+      if (normalized.canonical !== year.code) {
+        const [hasTerms, hasClassSubjects, hasAssignments, hasEnrollments] = await Promise.all([
+          AcademicTerm.countDocuments({ schoolId, academicYearId: id }),
+          ClassSubject.countDocuments({ schoolId, academicYearId: id }),
+          TeacherAssignment.countDocuments({ schoolId, academicYearId: id }),
+          Enrollment.countDocuments({ schoolId, academicYearId: id }),
+        ]);
+
+        if (hasTerms > 0 || hasClassSubjects > 0 || hasAssignments > 0 || hasEnrollments > 0) {
+          throw new ValidationError(
+            'Cannot change academic year identifier because dependent historical records already exist.'
+          );
+        }
+
+        // Check duplicate
+        const duplicate = await AcademicYear.findOne({
+          _id: { $ne: id },
+          schoolId,
+          code: normalized.canonical,
+          status: { $ne: 'ARCHIVED' },
+        });
+        if (duplicate) {
+          throw new ValidationError(`Academic year ${normalized.display} already exists.`);
+        }
+
+        year.code = normalized.canonical;
+        year.name = normalized.canonical;
       }
     }
 
-    Object.assign(year, req.body);
-
-    if (year.startDate >= year.endDate) {
-      throw new ValidationError('Start date must be before end date.');
+    // Dates check
+    const start = req.body.startDate ? new Date(req.body.startDate) : year.startDate;
+    const end = req.body.endDate ? new Date(req.body.endDate) : year.endDate;
+    if (start >= end) {
+      throw new ValidationError('End date must be after the start date.');
     }
 
-    await year.save();
+    // Check dependent terms are within updated dates
+    if (req.body.startDate || req.body.endDate) {
+      const outOfBoundTerm = await AcademicTerm.findOne({
+        schoolId,
+        academicYearId: id,
+        status: { $ne: 'ARCHIVED' },
+        $or: [{ startDate: { $lt: start } }, { endDate: { $gt: end } }],
+      });
+      if (outOfBoundTerm) {
+        throw new ValidationError(
+          `Cannot update dates: Academic term '${outOfBoundTerm.name}' falls outside the new date range.`
+        );
+      }
+      year.startDate = start;
+      year.endDate = end;
+    }
+
+    // Single active year rule when setting active
+    const willBeCurrent = req.body.isCurrent !== undefined ? Boolean(req.body.isCurrent) : year.isCurrent;
+    const willBeActive = req.body.status ? req.body.status === 'ACTIVE' : year.status === 'ACTIVE';
+
+    if ((willBeCurrent && !year.isCurrent) || (willBeActive && year.status !== 'ACTIVE' && req.body.isCurrent)) {
+      await withTransactionOrFallback(async (session) => {
+        const opts = session ? { session } : {};
+        await AcademicYear.updateMany(
+          { schoolId, _id: { $ne: id }, isCurrent: true },
+          { $set: { isCurrent: false, status: 'INACTIVE' } },
+          opts
+        );
+        year.isCurrent = true;
+        year.status = 'ACTIVE';
+        await year.save(opts);
+      });
+    } else if (req.body.status === 'INACTIVE' && year.isCurrent && !req.body.replacementAcademicYearId) {
+      // Deactivation check: prevent turning active year inactive if no replacement
+      const otherActive = await AcademicYear.findOne({ schoolId, _id: { $ne: id }, status: 'ACTIVE' });
+      if (!otherActive) {
+        throw new ValidationError(
+          'Please select another academic year before deactivating the current active academic year.'
+        );
+      }
+      year.status = 'INACTIVE';
+      year.isCurrent = false;
+      await year.save();
+    } else {
+      if (req.body.status) year.status = req.body.status;
+      await year.save();
+    }
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'UPDATE',
       entity: 'AcademicYear',
       entityId: year._id.toString(),
@@ -165,17 +325,23 @@ const setCurrentAcademicYear = async (req, res, next) => {
       throw new NotFoundError('Academic year not found.');
     }
 
-    await AcademicYear.updateMany({ schoolId }, { isCurrent: false });
-
-    year.isCurrent = true;
-    year.status = 'ACTIVE';
-    await year.save();
+    await withTransactionOrFallback(async (session) => {
+      const opts = session ? { session } : {};
+      await AcademicYear.updateMany(
+        { schoolId, _id: { $ne: id } },
+        { $set: { isCurrent: false, status: 'INACTIVE' } },
+        opts
+      );
+      year.isCurrent = true;
+      year.status = 'ACTIVE';
+      await year.save(opts);
+    });
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'SET_CURRENT',
       entity: 'AcademicYear',
       entityId: year._id.toString(),
@@ -200,32 +366,49 @@ const deleteAcademicYear = async (req, res, next) => {
       throw new NotFoundError('Academic year not found.');
     }
 
-    // Check historical dependencies
-    const hasTerms = await AcademicTerm.countDocuments({ schoolId, academicYearId: id });
-    const hasClassSubjects = await ClassSubject.countDocuments({ schoolId, academicYearId: id });
-    const hasTeacherAssignments = await TeacherAssignment.countDocuments({ schoolId, academicYearId: id });
+    // Check all dependent historical records
+    const [
+      termCount,
+      classSubjectCount,
+      teacherAssignmentCount,
+      enrollmentCount,
+      timetableCount,
+      attendanceRecordCount,
+      attendanceSessionCount,
+      feeStructureCount,
+      examResultCount,
+    ] = await Promise.all([
+      AcademicTerm.countDocuments({ schoolId, academicYearId: id }),
+      ClassSubject.countDocuments({ schoolId, academicYearId: id }),
+      TeacherAssignment.countDocuments({ schoolId, academicYearId: id }),
+      Enrollment.countDocuments({ schoolId, academicYearId: id }),
+      Timetable.countDocuments({ schoolId, academicYearId: id }),
+      AttendanceRecord.countDocuments({ schoolId, academicYearId: id }),
+      AttendanceSession.countDocuments({ schoolId, academicYearId: id }),
+      FeeStructure.countDocuments({ schoolId, academicYearId: id }),
+      ExamResult.countDocuments({ schoolId, academicYearId: id }),
+    ]);
 
-    if (hasTerms > 0 || hasClassSubjects > 0 || hasTeacherAssignments > 0) {
-      // Historical preservation requirement: deactivate instead of hard delete
-      year.status = 'INACTIVE';
-      year.isCurrent = false;
-      await year.save();
+    const totalDependencies =
+      termCount +
+      classSubjectCount +
+      teacherAssignmentCount +
+      enrollmentCount +
+      timetableCount +
+      attendanceRecordCount +
+      attendanceSessionCount +
+      feeStructureCount +
+      examResultCount;
 
-      await logAuditEvent({
-        schoolId,
-        actorId: req.user._id,
-        actorName: req.user.name,
-        actorEmail: req.user.email,
-        action: 'DEACTIVATE',
-        entity: 'AcademicYear',
-        entityId: year._id.toString(),
-        reason: 'Referenced by historical records - marked inactive for data preservation',
-        requestId: req.requestId,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
+    if (totalDependencies > 0) {
+      throw new ValidationError('This academic year cannot be deleted because related records exist.');
+    }
 
-      return successResponse(res, null, 'Academic year deactivated successfully');
+    // If active, prevent deleting the single active year
+    if (year.isCurrent) {
+      throw new ValidationError(
+        'Please select another academic year before deleting or deactivating the current active academic year.'
+      );
     }
 
     year.status = 'INACTIVE';
@@ -234,9 +417,9 @@ const deleteAcademicYear = async (req, res, next) => {
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'DEACTIVATE',
       entity: 'AcademicYear',
       entityId: id,
@@ -261,14 +444,24 @@ const restoreAcademicYear = async (req, res, next) => {
       throw new NotFoundError('Academic year not found.');
     }
 
-    year.status = 'ACTIVE';
-    await year.save();
+    // Activating a year makes it the active year atomically
+    await withTransactionOrFallback(async (session) => {
+      const opts = session ? { session } : {};
+      await AcademicYear.updateMany(
+        { schoolId, _id: { $ne: id } },
+        { $set: { isCurrent: false, status: 'INACTIVE' } },
+        opts
+      );
+      year.status = 'ACTIVE';
+      year.isCurrent = true;
+      await year.save(opts);
+    });
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'ACTIVATE',
       entity: 'AcademicYear',
       entityId: year._id.toString(),

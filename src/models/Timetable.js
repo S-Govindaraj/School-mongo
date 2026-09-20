@@ -16,7 +16,7 @@ const timetableSchema = new mongoose.Schema(
     subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
     teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', required: true },
     roomNumber: { type: String, trim: true, default: '' },
-    status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'ACTIVE' },
+    status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'INACTIVE' },
   },
   { timestamps: true }
 );
@@ -24,10 +24,19 @@ const timetableSchema = new mongoose.Schema(
 // Prevent section double booking for same day & period
 timetableSchema.index(
   { schoolId: 1, academicYearId: 1, sectionId: 1, dayOfWeek: 1, periodId: 1 },
-  { unique: true }
+  { unique: true, partialFilterExpression: { status: 'ACTIVE' } }
 );
 
-// Index to detect teacher schedule conflict
-timetableSchema.index({ schoolId: 1, academicYearId: 1, teacherId: 1, dayOfWeek: 1, periodId: 1 });
+// Prevent teacher double booking for same day & period
+timetableSchema.index(
+  { schoolId: 1, academicYearId: 1, teacherId: 1, dayOfWeek: 1, periodId: 1 },
+  { unique: true, partialFilterExpression: { status: 'ACTIVE' } }
+);
+
+// Prevent room double booking for same day & period if room specified
+timetableSchema.index(
+  { schoolId: 1, academicYearId: 1, roomNumber: 1, dayOfWeek: 1, periodId: 1 },
+  { unique: true, partialFilterExpression: { status: 'ACTIVE', roomNumber: { $gt: '' } } }
+);
 
 module.exports = mongoose.model('Timetable', timetableSchema);

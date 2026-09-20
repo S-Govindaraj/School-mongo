@@ -1,6 +1,7 @@
 const Subject = require('../models/Subject');
 const ClassSubject = require('../models/ClassSubject');
 const TeacherAssignment = require('../models/TeacherAssignment');
+const Timetable = require('../models/Timetable');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
@@ -18,7 +19,6 @@ const getSubjects = async (req, res, next) => {
     }
 
     const subjects = await Subject.find(filter).sort({ name: 1 });
-
     return successResponse(res, subjects, 'Subjects retrieved successfully');
   } catch (error) {
     next(error);
@@ -28,40 +28,53 @@ const getSubjects = async (req, res, next) => {
 const createSubject = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { name, code, shortName = '', type = 'CORE', description = '' } = req.body;
+    const { name, code, shortName = '', type = 'CORE', description = '', status: requestedStatus } = req.body;
+
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) {
+      throw new ValidationError('Subject name is required.');
+    }
 
     const formattedCode = String(code || '').trim().toUpperCase();
+    if (!formattedCode) {
+      throw new ValidationError('Subject code is required.');
+    }
 
-    const existing = await Subject.findOne({ schoolId, code: formattedCode });
-    if (existing && existing.status !== 'ARCHIVED') {
+    // Duplicate code check
+    const existingCode = await Subject.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } });
+    if (existingCode) {
       throw new ValidationError(`Subject code '${formattedCode}' already exists in this school.`);
     }
 
-    let subject;
-    if (existing && existing.status === 'ARCHIVED') {
-      existing.name = name;
-      existing.shortName = shortName;
-      existing.type = type;
-      existing.description = description;
-      existing.status = 'ACTIVE';
-      subject = await existing.save();
-    } else {
-      subject = await Subject.create({
-        schoolId,
-        name,
-        code: formattedCode,
-        shortName,
-        type,
-        description,
-        status: 'ACTIVE',
-      });
+    // Case-insensitive duplicate name check
+    const normalizedName = trimmedName.toLowerCase();
+    const existingName = await Subject.findOne({
+      schoolId,
+      $or: [{ normalizedName }, { name: new RegExp(`^${trimmedName}$`, 'i') }],
+      status: { $ne: 'ARCHIVED' },
+    });
+    if (existingName) {
+      throw new ValidationError(`Subject '${existingName.name}' already exists in this school.`);
     }
+
+    const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
+
+    const subject = await Subject.create({
+      schoolId,
+      name: trimmedName,
+      normalizedName,
+      code: formattedCode,
+      shortName: String(shortName || '').trim(),
+      type,
+      description: String(description || '').trim(),
+      status,
+    });
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'CREATE',
       entity: 'Subject',
       entityId: subject._id.toString(),
@@ -88,14 +101,48 @@ const updateSubject = async (req, res, next) => {
     }
 
     const oldValues = subject.toObject();
-    Object.assign(subject, req.body);
+
+    if (req.body.code && String(req.body.code).trim().toUpperCase() !== subject.code) {
+      const formattedCode = String(req.body.code).trim().toUpperCase();
+      const existing = await Subject.findOne({
+        _id: { $ne: id },
+        schoolId,
+        code: formattedCode,
+        status: { $ne: 'ARCHIVED' },
+      });
+      if (existing) {
+        throw new ValidationError(`Subject code '${formattedCode}' already exists in this school.`);
+      }
+      subject.code = formattedCode;
+    }
+
+    if (req.body.name && String(req.body.name).trim().toLowerCase() !== (subject.normalizedName || subject.name.toLowerCase())) {
+      const trimmedName = String(req.body.name).trim();
+      const existing = await Subject.findOne({
+        _id: { $ne: id },
+        schoolId,
+        $or: [{ normalizedName: trimmedName.toLowerCase() }, { name: new RegExp(`^${trimmedName}$`, 'i') }],
+        status: { $ne: 'ARCHIVED' },
+      });
+      if (existing) {
+        throw new ValidationError(`Subject '${existing.name}' already exists in this school.`);
+      }
+      subject.name = trimmedName;
+      subject.normalizedName = trimmedName.toLowerCase();
+    }
+
+    if (req.body.shortName !== undefined) subject.shortName = String(req.body.shortName || '').trim();
+    if (req.body.type) subject.type = req.body.type;
+    if (req.body.description !== undefined) subject.description = String(req.body.description || '').trim();
+    if (req.body.status) subject.status = req.body.status;
+
     await subject.save();
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'UPDATE',
       entity: 'Subject',
       entityId: subject._id.toString(),
@@ -122,28 +169,14 @@ const deleteSubject = async (req, res, next) => {
       throw new NotFoundError('Subject not found.');
     }
 
-    const hasClassSubjects = await ClassSubject.countDocuments({ schoolId, subjectId: id, status: { $ne: 'ARCHIVED' } });
-    const hasAssignments = await TeacherAssignment.countDocuments({ schoolId, subjectId: id, status: { $ne: 'ARCHIVED' } });
+    const [hasClassSubjects, hasAssignments, hasTimetable] = await Promise.all([
+      ClassSubject.countDocuments({ schoolId, subjectId: id, status: { $ne: 'ARCHIVED' } }),
+      TeacherAssignment.countDocuments({ schoolId, subjectId: id, status: { $ne: 'ARCHIVED' } }),
+      Timetable.countDocuments({ schoolId, subjectId: id, status: { $ne: 'ARCHIVED' } }),
+    ]);
 
-    if (hasClassSubjects > 0 || hasAssignments > 0) {
-      subject.status = 'INACTIVE';
-      await subject.save();
-
-      await logAuditEvent({
-        schoolId,
-        actorId: req.user._id,
-        actorName: req.user.name,
-        actorEmail: req.user.email,
-        action: 'DEACTIVATE',
-        entity: 'Subject',
-        entityId: subject._id.toString(),
-        reason: 'Referenced by class subjects or teacher assignments - marked inactive for data preservation',
-        requestId: req.requestId,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-
-      return successResponse(res, null, 'Subject deactivated successfully (referenced by class configurations)');
+    if (hasClassSubjects > 0 || hasAssignments > 0 || hasTimetable > 0) {
+      throw new ValidationError('This subject cannot be deleted because related class configurations or timetable entries exist.');
     }
 
     subject.status = 'INACTIVE';
@@ -151,9 +184,9 @@ const deleteSubject = async (req, res, next) => {
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'DEACTIVATE',
       entity: 'Subject',
       entityId: id,
@@ -178,20 +211,17 @@ const restoreSubject = async (req, res, next) => {
       throw new NotFoundError('Subject not found.');
     }
 
-    const oldValues = subject.toObject();
     subject.status = 'ACTIVE';
     await subject.save();
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'ACTIVATE',
       entity: 'Subject',
       entityId: subject._id.toString(),
-      oldValues,
-      newValues: subject.toObject(),
       requestId: req.requestId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],

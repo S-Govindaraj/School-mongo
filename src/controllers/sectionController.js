@@ -1,6 +1,9 @@
 const Section = require('../models/Section');
 const Grade = require('../models/Grade');
 const TeacherAssignment = require('../models/TeacherAssignment');
+const Enrollment = require('../models/Enrollment');
+const Timetable = require('../models/Timetable');
+const AttendanceRecord = require('../models/AttendanceRecord');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
@@ -34,48 +37,57 @@ const getSections = async (req, res, next) => {
 const createSection = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { gradeId, name, code, capacity = 40, room = '' } = req.body;
+    const { gradeId, name, code, capacity = 40, room = '', status: requestedStatus } = req.body;
 
     const grade = await Grade.findOne({ _id: gradeId, schoolId });
     if (!grade) {
       throw new ValidationError('Selected grade does not exist in this school.');
     }
 
-    if (Number(capacity) < 0) {
-      throw new ValidationError('Section capacity must be greater than or equal to 0.');
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) {
+      throw new ValidationError('Section name is required.');
     }
 
     const formattedCode = String(code || '').trim().toUpperCase();
+    if (!formattedCode) {
+      throw new ValidationError('Section code is required.');
+    }
 
-    const existing = await Section.findOne({ schoolId, gradeId, code: formattedCode });
-    if (existing && existing.status !== 'ARCHIVED') {
+    const capNum = Number(capacity);
+    if (!Number.isInteger(capNum) || capNum <= 0) {
+      throw new ValidationError('Section capacity must be a positive integer greater than 0.');
+    }
+
+    // Uniqueness within grade: code
+    const existingCode = await Section.findOne({ schoolId, gradeId, code: formattedCode, status: { $ne: 'ARCHIVED' } });
+    if (existingCode) {
       throw new ValidationError(`Section code '${formattedCode}' already exists in this grade.`);
     }
 
-    let section;
-    if (existing && existing.status === 'ARCHIVED') {
-      existing.name = name;
-      existing.capacity = Number(capacity);
-      existing.room = room;
-      existing.status = 'ACTIVE';
-      section = await existing.save();
-    } else {
-      section = await Section.create({
-        schoolId,
-        gradeId,
-        name,
-        code: formattedCode,
-        capacity: Number(capacity),
-        room,
-        status: 'ACTIVE',
-      });
+    // Uniqueness within grade: name
+    const existingName = await Section.findOne({ schoolId, gradeId, name: trimmedName, status: { $ne: 'ARCHIVED' } });
+    if (existingName) {
+      throw new ValidationError(`Section '${trimmedName}' already exists in this grade.`);
     }
+
+    const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
+
+    const section = await Section.create({
+      schoolId,
+      gradeId,
+      name: trimmedName,
+      code: formattedCode,
+      capacity: capNum,
+      room: String(room || '').trim(),
+      status,
+    });
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'CREATE',
       entity: 'Section',
       entityId: section._id.toString(),
@@ -102,19 +114,68 @@ const updateSection = async (req, res, next) => {
     }
 
     const oldValues = section.toObject();
+    const gradeId = req.body.gradeId || section.gradeId;
 
-    if (req.body.capacity !== undefined && Number(req.body.capacity) < 0) {
-      throw new ValidationError('Section capacity must be greater than or equal to 0.');
+    if (req.body.capacity !== undefined) {
+      const capNum = Number(req.body.capacity);
+      if (!Number.isInteger(capNum) || capNum <= 0) {
+        throw new ValidationError('Section capacity must be a positive integer greater than 0.');
+      }
+
+      // Check current active enrollment
+      const activeEnrollments = await Enrollment.countDocuments({
+        schoolId,
+        sectionId: id,
+        status: { $in: ['ENROLLED', 'ACTIVE'] },
+      });
+      if (capNum < activeEnrollments) {
+        throw new ValidationError(
+          `Cannot reduce capacity to ${capNum} because this section already has ${activeEnrollments} active enrolled students.`
+        );
+      }
+      section.capacity = capNum;
     }
 
-    Object.assign(section, req.body);
+    if (req.body.code && String(req.body.code).trim().toUpperCase() !== section.code) {
+      const formattedCode = String(req.body.code).trim().toUpperCase();
+      const existing = await Section.findOne({
+        _id: { $ne: id },
+        schoolId,
+        gradeId,
+        code: formattedCode,
+        status: { $ne: 'ARCHIVED' },
+      });
+      if (existing) {
+        throw new ValidationError(`Section code '${formattedCode}' already exists in this grade.`);
+      }
+      section.code = formattedCode;
+    }
+
+    if (req.body.name && String(req.body.name).trim() !== section.name) {
+      const trimmedName = String(req.body.name).trim();
+      const existing = await Section.findOne({
+        _id: { $ne: id },
+        schoolId,
+        gradeId,
+        name: trimmedName,
+        status: { $ne: 'ARCHIVED' },
+      });
+      if (existing) {
+        throw new ValidationError(`Section '${trimmedName}' already exists in this grade.`);
+      }
+      section.name = trimmedName;
+    }
+
+    if (req.body.room !== undefined) section.room = String(req.body.room || '').trim();
+    if (req.body.status) section.status = req.body.status;
+
     await section.save();
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'UPDATE',
       entity: 'Section',
       entityId: section._id.toString(),
@@ -141,27 +202,15 @@ const deleteSection = async (req, res, next) => {
       throw new NotFoundError('Section not found.');
     }
 
-    const hasAssignments = await TeacherAssignment.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } });
+    const [hasAssignments, hasEnrollments, hasTimetable, hasAttendance] = await Promise.all([
+      TeacherAssignment.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } }),
+      Enrollment.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } }),
+      Timetable.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } }),
+      AttendanceRecord.countDocuments({ schoolId, sectionId: id }),
+    ]);
 
-    if (hasAssignments > 0) {
-      section.status = 'INACTIVE';
-      await section.save();
-
-      await logAuditEvent({
-        schoolId,
-        actorId: req.user._id,
-        actorName: req.user.name,
-        actorEmail: req.user.email,
-        action: 'DEACTIVATE',
-        entity: 'Section',
-        entityId: section._id.toString(),
-        reason: 'Referenced by teacher assignments - marked inactive for data preservation',
-        requestId: req.requestId,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-
-      return successResponse(res, null, 'Section deactivated successfully (referenced by teacher assignments)');
+    if (hasAssignments > 0 || hasEnrollments > 0 || hasTimetable > 0 || hasAttendance > 0) {
+      throw new ValidationError('This section cannot be deleted because related records exist (students, timetable, or assignments).');
     }
 
     section.status = 'INACTIVE';
@@ -169,9 +218,9 @@ const deleteSection = async (req, res, next) => {
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'DEACTIVATE',
       entity: 'Section',
       entityId: id,
@@ -196,20 +245,17 @@ const restoreSection = async (req, res, next) => {
       throw new NotFoundError('Section not found.');
     }
 
-    const oldValues = section.toObject();
     section.status = 'ACTIVE';
     await section.save();
 
     await logAuditEvent({
       schoolId,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
       action: 'ACTIVATE',
       entity: 'Section',
       entityId: section._id.toString(),
-      oldValues,
-      newValues: section.toObject(),
       requestId: req.requestId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],

@@ -52,7 +52,20 @@ const createLeaveRequest = async (req, res, next) => {
     const { studentId, academicYearId, fromDate, toDate, reason, requestedBy = 'PARENT' } = req.body;
 
     const student = await Student.findOne({ _id: studentId, schoolId });
-    if (!student) throw new NotFoundError('Student not found');
+    if (!student) throw new NotFoundError('Student not found in this school.');
+
+    const start = new Date(fromDate);
+    const end = new Date(toDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new ValidationError('Valid fromDate and toDate are required.');
+    }
+    if (start > end) {
+      throw new ValidationError('From date must be on or before To date.');
+    }
+
+    if (!reason || !String(reason).trim()) {
+      throw new ValidationError('Reason is required for leave requests.');
+    }
 
     let targetAY = academicYearId;
     if (!targetAY) {
@@ -60,18 +73,46 @@ const createLeaveRequest = async (req, res, next) => {
       targetAY = activeAY?._id;
     }
 
+    // Overlap validation: Check if student has pending or approved leave overlapping these dates
+    const overlapping = await LeaveRequest.findOne({
+      schoolId,
+      studentId,
+      status: { $in: ['PENDING', 'APPROVED'] },
+      $or: [
+        { fromDate: { $lte: start }, toDate: { $gte: start } },
+        { fromDate: { $lte: end }, toDate: { $gte: end } },
+        { fromDate: { $gte: start }, toDate: { $lte: end } },
+      ],
+    });
+
+    if (overlapping) {
+      throw new ValidationError('A leave request already exists covering the selected dates.');
+    }
+
     const leave = await LeaveRequest.create({
       schoolId,
       studentId,
       academicYearId: targetAY,
-      fromDate: new Date(fromDate),
-      toDate: new Date(toDate),
-      reason: String(reason || '').trim(),
+      fromDate: start,
+      toDate: end,
+      reason: String(reason).trim(),
       requestedBy: String(requestedBy || 'PARENT').trim(),
       status: 'PENDING',
     });
 
-    await logAuditEvent(req, 'LEAVE_CREATE', 'LeaveRequest', leave._id, null, leave);
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'CREATE',
+      entity: 'LeaveRequest',
+      entityId: leave._id.toString(),
+      newValues: leave.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     return successResponse(res, leave, 'Leave request submitted successfully', 201);
   } catch (error) {
@@ -86,21 +127,49 @@ const updateLeaveStatus = async (req, res, next) => {
     const { status, remarks } = req.body;
 
     if (!['APPROVED', 'REJECTED', 'CANCELLED'].includes(status)) {
-      throw new ValidationError('Invalid leave request status');
+      throw new ValidationError('Invalid leave request status. Allowed: APPROVED, REJECTED, CANCELLED');
     }
 
     const leave = await LeaveRequest.findOne({ _id: id, schoolId });
     if (!leave) throw new NotFoundError('Leave request not found');
 
+    // Workflow validation: Prevent arbitrary status reversals like APPROVED -> PENDING
+    if (leave.status === 'REJECTED' && status === 'APPROVED') {
+      throw new ValidationError('Cannot approve a previously rejected leave request without resubmission.');
+    }
+    if (leave.status === 'CANCELLED') {
+      throw new ValidationError('Cannot modify a cancelled leave request.');
+    }
+
+    if (status === 'REJECTED' && (!remarks || !String(remarks).trim())) {
+      throw new ValidationError('A rejection reason is required when rejecting a leave request.');
+    }
+
+    const oldValues = leave.toObject();
     leave.status = status;
     leave.remarks = String(remarks || '').trim();
+
     if (status === 'APPROVED') {
-      leave.approvedBy = req.user._id;
+      leave.approvedBy = req.user?._id;
       leave.approvedAt = new Date();
     }
+
     await leave.save();
 
-    await logAuditEvent(req, 'LEAVE_STATUS_UPDATE', 'LeaveRequest', leave._id, null, { status, remarks });
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'UPDATE_STATUS',
+      entity: 'LeaveRequest',
+      entityId: leave._id.toString(),
+      oldValues,
+      newValues: leave.toObject(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     return successResponse(res, leave, `Leave request ${status.toLowerCase()} successfully`);
   } catch (error) {

@@ -78,9 +78,57 @@ const markAllNotificationsRead = async (req, res, next) => {
   }
 };
 
+const deleteNotification = async (req, res, next) => {
+  try {
+    const userId = req.user?._id;
+    const { id } = req.params;
+    const notification = await Notification.findOneAndDelete({ _id: id, recipientUserId: userId });
+    if (!notification) {
+      return errorResponse(res, 'Notification not found', 404, 'NOT_FOUND');
+    }
+    return successResponse(res, null, 'Notification deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const bulkMarkNotificationsRead = async (req, res, next) => {
+  try {
+    const userId = req.user?._id;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'ids array is required', 400, 'BAD_REQUEST');
+    }
+    await Notification.updateMany(
+      { _id: { $in: ids }, recipientUserId: userId },
+      { status: 'READ', readAt: new Date() }
+    );
+    return successResponse(res, null, 'Selected notifications marked as read');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const bulkDeleteNotifications = async (req, res, next) => {
+  try {
+    const userId = req.user?._id;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'ids array is required', 400, 'BAD_REQUEST');
+    }
+    await Notification.deleteMany({ _id: { $in: ids }, recipientUserId: userId });
+    return successResponse(res, null, 'Selected notifications deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getNotifications,
   getUnreadNotificationCount,
   markNotificationRead,
-  markAllNotificationsRead
+  markAllNotificationsRead,
+  deleteNotification,
+  bulkMarkNotificationsRead,
+  bulkDeleteNotifications
 };

@@ -115,6 +115,10 @@ const markBulkAttendance = async (req, res, next) => {
       status: { $ne: 'ARCHIVED' },
     });
 
+    if (session && session.status === 'LOCKED') {
+      throw new ValidationError('This record is locked and cannot be modified.');
+    }
+
     if (!session) {
       session = await AttendanceSession.create({
         schoolId,
@@ -131,10 +135,35 @@ const markBulkAttendance = async (req, res, next) => {
       });
     }
 
+    // Cache attendance statuses to check required reasons
+    const allStatuses = await AttendanceStatus.find({ schoolId });
+    const statusMap = new Map(allStatuses.map((s) => [String(s._id), s]));
+
     // 2. Process records idempotently using bulkWrite
     const bulkOps = [];
     for (const item of records) {
       const { studentId, enrollmentId, statusId, remarks } = item;
+
+      // Validate student enrollment in this section & academic year
+      const activeEnrollment = await Enrollment.findOne({
+        schoolId,
+        studentId,
+        gradeId,
+        sectionId,
+        academicYearId,
+        status: { $in: ['ENROLLED', 'ACTIVE'] },
+      });
+      if (!activeEnrollment) {
+        throw new ValidationError(`Student ${studentId} is not enrolled in this section for the selected academic year.`);
+      }
+
+      // Check if status requires a reason
+      const statusDoc = statusMap.get(String(statusId));
+      if (statusDoc && (statusDoc.requiresReason || ['EXCUSED', 'LEAVE'].includes(statusDoc.code))) {
+        if (!remarks || !String(remarks).trim()) {
+          throw new ValidationError(`A reason is required when marking attendance as ${statusDoc.name || statusDoc.code}.`);
+        }
+      }
 
       bulkOps.push({
         updateOne: {
@@ -149,7 +178,7 @@ const markBulkAttendance = async (req, res, next) => {
               attendanceSessionId: session._id,
               academicYearId,
               studentId,
-              enrollmentId,
+              enrollmentId: enrollmentId || activeEnrollment._id,
               gradeId,
               sectionId,
               date: sessionDate,
@@ -174,10 +203,18 @@ const markBulkAttendance = async (req, res, next) => {
     session.completedAt = new Date();
     await session.save();
 
-    await logAuditEvent(req, 'ATTENDANCE_MARK', 'AttendanceSession', session._id, null, {
-      totalRecords: records.length,
-      date,
-      sectionId,
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'MARK',
+      entity: 'AttendanceSession',
+      entityId: session._id.toString(),
+      details: { totalRecords: records.length, date, sectionId },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
     });
 
     return successResponse(res, { sessionId: session._id, count: records.length }, 'Attendance marked successfully');

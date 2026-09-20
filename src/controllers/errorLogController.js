@@ -178,9 +178,18 @@ const updateErrorLogGroupStatus = async (req, res, next) => {
       return errorResponse(res, `Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400, 'VALIDATION_ERROR');
     }
 
-    const query = { fingerprint };
+      // Match the same school visibility as getErrorLogs (schoolId == user's school OR null/missing)
+    // so system-level errors (schoolId null) that are visible to the user can also be resolved,
+    // and a fingerprint that has both scoped and unscoped logs is fully resolved.
+    let query;
     if (req.schoolContext?.schoolId) {
-      query.schoolId = req.schoolContext.schoolId;
+      const schoolId = new mongoose.Types.ObjectId(req.schoolContext.schoolId);
+      query = {
+        fingerprint,
+        $or: [{ schoolId }, { schoolId: null }, { schoolId: { $exists: false } }],
+      };
+    } else {
+      query = { fingerprint };
     }
 
     const result = await ErrorLog.updateMany(query, { $set: { status } });
