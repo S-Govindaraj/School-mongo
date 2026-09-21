@@ -102,13 +102,17 @@ const createPeriod = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     await validatePeriod(schoolId, req.body);
 
-    const { name, code, sequence, startTime, endTime, isBreak = false, status: requestedStatus } = req.body;
+    const { name, code, sequence, startTime, endTime, type, isBreak = false, status: requestedStatus } = req.body;
 
     const sTime = String(startTime).trim();
     const eTime = String(endTime).trim();
     const duration = calculateDuration(sTime, eTime);
 
     const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
+
+    // `type` is authoritative when provided; otherwise derive it from the
+    // legacy `isBreak` flag so older callers keep working unchanged.
+    const resolvedType = ['INSTRUCTIONAL', 'BREAK', 'LUNCH'].includes(type) ? type : (isBreak ? 'BREAK' : 'INSTRUCTIONAL');
 
     const period = await Period.create({
       schoolId,
@@ -118,7 +122,8 @@ const createPeriod = async (req, res, next) => {
       startTime: sTime,
       endTime: eTime,
       durationMinutes: duration,
-      isBreak: Boolean(isBreak),
+      type: resolvedType,
+      isBreak: resolvedType !== 'INSTRUCTIONAL',
       status,
     });
 
@@ -152,6 +157,22 @@ const updatePeriod = async (req, res, next) => {
 
     const merged = { ...period.toObject(), ...req.body };
     await validatePeriod(schoolId, merged, id);
+
+    // Turning an already-used INSTRUCTIONAL period into BREAK/LUNCH (or vice
+    // versa via isBreak) would leave existing timetable entries silently
+    // pointing at a slot that no longer means what it did when they were
+    // created — that's exactly the "invalid timetable data" this must block.
+    const resolvedType = ['INSTRUCTIONAL', 'BREAK', 'LUNCH'].includes(req.body.type)
+      ? req.body.type
+      : (req.body.isBreak !== undefined ? (req.body.isBreak ? 'BREAK' : 'INSTRUCTIONAL') : undefined);
+    if (resolvedType && resolvedType !== period.type) {
+      const referencedByTimetable = await Timetable.countDocuments({ schoolId, periodId: id, status: { $ne: 'ARCHIVED' } });
+      if (referencedByTimetable > 0) {
+        throw new ValidationError(
+          `Cannot change this period's type because ${referencedByTimetable} active timetable entr${referencedByTimetable === 1 ? 'y references' : 'ies reference'} it. Remove or reassign those timetable entries first.`
+        );
+      }
+    }
 
     const oldValues = period.toObject();
     Object.assign(period, req.body);

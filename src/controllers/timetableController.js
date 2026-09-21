@@ -325,34 +325,6 @@ const swapTimetableEntries = async (req, res, next) => {
   }
 };
 
-const saveTimetableGeneratorDraft = async (req, res, next) => {
-  try {
-    const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, gradeIds, sectionIds, currentStep, draftData } = req.body;
-
-    if (!academicYearId || !gradeIds?.length) {
-      throw new ValidationError('Academic Year and Grades are required');
-    }
-
-    // Store draft in a simple JSON structure (or use localStorage on frontend)
-    // This is just for reference — in production, you might use a TimetableDraft model
-    const draftMeta = {
-      schoolId,
-      userId: req.user?._id,
-      academicYearId,
-      gradeIds,
-      sectionIds,
-      currentStep,
-      draftData,
-      savedAt: new Date(),
-    };
-
-    return successResponse(res, draftMeta, 'Timetable draft saved successfully');
-  } catch (error) {
-    next(error);
-  }
-};
-
 module.exports = {
   getTimetables,
   getSectionTimetable,
@@ -366,5 +338,4 @@ module.exports = {
   publishTimetables,
   bulkUpdateTimetables,
   swapTimetableEntries,
-  saveTimetableGeneratorDraft,
 };

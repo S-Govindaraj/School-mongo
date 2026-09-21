@@ -3,6 +3,7 @@ const ClassSubject = require('../models/ClassSubject');
 const TeacherAssignment = require('../models/TeacherAssignment');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const GradeSectionPeriodConfig = require('../models/GradeSectionPeriodConfig');
 const { ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
 const { withTransactionOrFallback } = require('../utils/withTransaction');
@@ -106,6 +107,43 @@ const buildRequirementVariables = async ({ schoolId, academicYearId, gradeIds, s
   return { variables, unassignedRequirements };
 };
 
+/**
+ * Different grades commonly run different numbers of periods per day (e.g.
+ * Grade 1 = 4, Grade 5 = 8), so the generator must never assume one global
+ * period count. For each section, resolve its SELECTED instructional periods
+ * (GradeSectionPeriodConfig) — falling back to every ACTIVE INSTRUCTIONAL
+ * period in the school when nothing has been explicitly selected yet, so
+ * generation still works before anyone has visited the Periods step.
+ * Returns Map<sectionId, sortedPeriodDocs[]>.
+ */
+const resolveSectionPeriods = async ({ schoolId, academicYearId, sections, ctx }) => {
+  const allInstructional = [...ctx.periods.values()]
+    .filter((p) => p.status === 'ACTIVE' && (p.type ? p.type === 'INSTRUCTIONAL' : !p.isBreak))
+    .sort((a, b) => a.sequence - b.sequence);
+
+  const configs = await GradeSectionPeriodConfig.find({
+    schoolId,
+    academicYearId,
+    sectionId: { $in: sections.map((s) => s._id) },
+  }).lean();
+  const configBySection = new Map(configs.map((c) => [String(c.sectionId), c]));
+
+  const bySection = new Map();
+  for (const section of sections) {
+    const config = configBySection.get(String(section._id));
+    if (config && config.periodIds?.length) {
+      const selected = config.periodIds
+        .map((pid) => ctx.periods.get(String(pid)))
+        .filter((p) => p && p.status === 'ACTIVE' && (p.type ? p.type === 'INSTRUCTIONAL' : !p.isBreak))
+        .sort((a, b) => a.sequence - b.sequence);
+      bySection.set(String(section._id), selected.length ? selected : allInstructional);
+    } else {
+      bySection.set(String(section._id), allInstructional);
+    }
+  }
+  return bySection;
+};
+
 /** All (day, period) domain slots, and adjacent pairs for double-period variables. */
 const buildSlotDomain = (days, sortedPeriods) => {
   const singles = [];
@@ -126,18 +164,18 @@ const buildSlotDomain = (days, sortedPeriods) => {
   return { singles, doubles };
 };
 
-const difficultyScore = (variable, ctx, teacherLoad, totalNonBreakSlots) => {
+const difficultyScore = (variable, ctx, teacherLoad, slotsForSection) => {
   const teacherUnitCount = teacherLoad.get(variable.teacherId) || 1;
   const teacher = ctx.staffById.get(variable.teacherId);
   const unavailableSlots = (teacher?.unavailability || []).reduce(
-    (sum, u) => sum + (u.periods?.length ? u.periods.length : totalNonBreakSlots / 7),
+    (sum, u) => sum + (u.periods?.length ? u.periods.length : slotsForSection / 7),
     0
   );
   return (
     (variable.isDouble ? 1000 : 0) +
     teacherUnitCount * 50 +
     unavailableSlots * 20 +
-    (variable.weeklyPeriods / Math.max(1, totalNonBreakSlots)) * 10
+    (variable.weeklyPeriods / Math.max(1, slotsForSection)) * 10
   );
 };
 
@@ -172,13 +210,13 @@ const scoreCandidate = (variable, candidate, ctx, constraints, usedDaysForSubjec
  * impossible configuration still returns promptly with a structured report
  * instead of hanging.
  */
-const runGeneration = ({ variables, singles, doubles, ctx, academicYearId, constraints, requestSeed }) => {
+const runGeneration = ({ variables, slotDomainBySection, ctx, academicYearId, constraints, requestSeed }) => {
   const rng = seededRandom(hashString(requestSeed));
   const teacherLoad = new Map();
   variables.forEach((v) => teacherLoad.set(v.teacherId, (teacherLoad.get(v.teacherId) || 0) + 1));
-  const totalNonBreakSlots = singles.length;
+  const slotsForVariable = (v) => slotDomainBySection.get(v.sectionId)?.singles.length || 1;
 
-  const order = [...variables].sort((a, b) => difficultyScore(b, ctx, teacherLoad, totalNonBreakSlots) - difficultyScore(a, ctx, teacherLoad, totalNonBreakSlots));
+  const order = [...variables].sort((a, b) => difficultyScore(b, ctx, teacherLoad, slotsForVariable(b)) - difficultyScore(a, ctx, teacherLoad, slotsForVariable(a)));
 
   const assigned = []; // [{variable, slots: [placedSlot,...]}]
   const tabu = new Map(); // variableId -> Set of candidate keys already tried & backtracked away from
@@ -189,7 +227,10 @@ const runGeneration = ({ variables, singles, doubles, ctx, academicYearId, const
 
   const candidateKey = (v, c) => (v.isDouble ? `${c.dayOfWeek}:${c.periodId}:${c.periodId2}` : `${c.dayOfWeek}:${c.periodId}`);
 
-  const domainFor = (variable) => (variable.isDouble ? doubles : singles);
+  const domainFor = (variable) => {
+    const domain = slotDomainBySection.get(variable.sectionId);
+    return variable.isDouble ? domain?.doubles || [] : domain?.singles || [];
+  };
 
   const isCandidateValid = (variable, candidate) => {
     const slot1 = toSlot(variable, candidate, academicYearId);
@@ -345,11 +386,21 @@ class TimetableGeneratorService {
       ownSlots.forEach((slot) => ctx.remove(slot));
     }
 
-    const sortedPeriods = [...ctx.periods.values()].filter((p) => !p.isBreak).sort((a, b) => a.sequence - b.sequence);
-    if (!sortedPeriods.length) throw new ValidationError('No active, non-break periods are configured for this school.');
-
-    const { singles, doubles } = buildSlotDomain(selectedDays, sortedPeriods);
-    const availableSlots = singles.length;
+    // Each section uses only its OWN selected instructional periods — different
+    // grades commonly run different period counts (e.g. Grade 1 = 4, Grade 5 = 8),
+    // so this must never assume one global period count for every section.
+    const periodsBySection = await resolveSectionPeriods({ schoolId, academicYearId, sections, ctx });
+    const slotDomainBySection = new Map();
+    for (const section of sections) {
+      const sectionId = String(section._id);
+      const sortedPeriods = periodsBySection.get(sectionId) || [];
+      if (!sortedPeriods.length) {
+        throw new ValidationError(
+          `No active instructional periods are selected for ${section.name}. Configure/select instructional periods for this Grade + Section before generating.`
+        );
+      }
+      slotDomainBySection.set(sectionId, buildSlotDomain(selectedDays, sortedPeriods));
+    }
 
     const { variables, unassignedRequirements } = await buildRequirementVariables({
       schoolId,
@@ -361,17 +412,36 @@ class TimetableGeneratorService {
       regenerateSubjectId,
     });
 
-    const requiredSlots = variables.reduce((sum, v) => sum + (v.isDouble ? 2 : 1), 0);
-    if (requiredSlots > availableSlots * sections.length) {
+    // Required vs available is checked PER SECTION — a section with fewer
+    // selected periods (e.g. Grade 1) must never be judged against another
+    // section's larger capacity (e.g. Grade 5).
+    const requiredBySection = new Map();
+    variables.forEach((v) => {
+      requiredBySection.set(v.sectionId, (requiredBySection.get(v.sectionId) || 0) + (v.isDouble ? 2 : 1));
+    });
+    const overCapacity = [];
+    let totalAvailableSlots = 0;
+    let totalRequiredSlots = 0;
+    for (const section of sections) {
+      const sectionId = String(section._id);
+      const available = slotDomainBySection.get(sectionId).singles.length;
+      const required = requiredBySection.get(sectionId) || 0;
+      totalAvailableSlots += available;
+      totalRequiredSlots += required;
+      if (required > available) {
+        overCapacity.push({ sectionName: section.name, required, available });
+      }
+    }
+    if (overCapacity.length) {
+      const detail = overCapacity.map((o) => `${o.sectionName}: required ${o.required}, available ${o.available}`).join('; ');
       throw new ValidationError(
-        `Timetable cannot be generated because the selected subjects require ${requiredSlots} periods, but only ${availableSlots * sections.length} periods are available across the selected section(s).`
+        `Cannot generate timetable — required weekly subject periods exceed available instructional slots for: ${detail}. Please adjust the subject weekly periods or select additional instructional periods.`
       );
     }
 
     const result = runGeneration({
       variables,
-      singles,
-      doubles,
+      slotDomainBySection,
       ctx,
       academicYearId,
       constraints: constraints || {},
@@ -380,9 +450,19 @@ class TimetableGeneratorService {
 
     return {
       summary: {
-        availableSlots: availableSlots * sections.length,
-        requiredSlots,
-        remainingSlots: availableSlots * sections.length - requiredSlots,
+        availableSlots: totalAvailableSlots,
+        requiredSlots: totalRequiredSlots,
+        remainingSlots: totalAvailableSlots - totalRequiredSlots,
+        bySection: sections.map((s) => {
+          const sectionId = String(s._id);
+          return {
+            sectionId,
+            sectionName: s.name,
+            availableSlots: slotDomainBySection.get(sectionId).singles.length,
+            requiredSlots: requiredBySection.get(sectionId) || 0,
+            selectedPeriodCount: (periodsBySection.get(sectionId) || []).length,
+          };
+        }),
         ...result.stats,
       },
       slots: result.slots,

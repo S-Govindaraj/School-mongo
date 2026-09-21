@@ -21,7 +21,30 @@ const getGrades = async (req, res, next) => {
     }
 
     const grades = await Grade.find(filter).sort({ sequenceOrder: 1, name: 1 }).lean();
-    return successResponse(res, grades, 'Grades retrieved successfully');
+
+    // Attach each grade's configured sections — one grouped query instead of
+    // an N+1 lookup per grade, so the frontend never needs to fetch/join
+    // Sections separately just to render this column.
+    const gradeIds = grades.map((g) => g._id);
+    const sections = gradeIds.length
+      ? await Section.find({ schoolId, gradeId: { $in: gradeIds }, status: { $ne: 'ARCHIVED' } })
+          .select('name code gradeId')
+          .sort({ name: 1 })
+          .lean()
+      : [];
+    const sectionsByGrade = new Map();
+    sections.forEach((s) => {
+      const key = String(s.gradeId);
+      if (!sectionsByGrade.has(key)) sectionsByGrade.set(key, []);
+      sectionsByGrade.get(key).push({ _id: s._id, name: s.name, code: s.code });
+    });
+
+    const gradesWithSections = grades.map((g) => ({
+      ...g,
+      sections: sectionsByGrade.get(String(g._id)) || [],
+    }));
+
+    return successResponse(res, gradesWithSections, 'Grades retrieved successfully');
   } catch (error) {
     next(error);
   }

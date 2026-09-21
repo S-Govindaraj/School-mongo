@@ -148,6 +148,7 @@ const sectionSchema = z.object({
   code: z.string().trim().toUpperCase().min(1, 'Section code is required').max(50, 'Section code cannot exceed 50 characters'),
   capacity: z.number().int('Capacity must be an integer').min(1, 'Capacity must be greater than 0').default(40),
   room: z.string().trim().default(''),
+  roomId: z.string().optional().or(z.literal('')),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
 });
 
@@ -256,6 +257,7 @@ const basePeriodObject = z.object({
   startTime: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Start time must be in HH:mm format (e.g. 09:00)'),
   endTime: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'End time must be in HH:mm format (e.g. 09:45)'),
   durationMinutes: z.number().optional(),
+  type: z.enum(['INSTRUCTIONAL', 'BREAK', 'LUNCH']).optional(),
   isBreak: z.boolean().default(false),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
 });
@@ -266,6 +268,13 @@ const periodSchema = basePeriodObject.refine((data) => data.startTime < data.end
 });
 
 const updatePeriodSchema = basePeriodObject.partial();
+
+const gradeSectionPeriodConfigSchema = z.object({
+  academicYearId: z.string().min(1, 'Academic Year is required'),
+  gradeId: z.string().min(1, 'Grade is required'),
+  sectionId: z.string().min(1, 'Section is required'),
+  periodIds: z.array(z.string()).default([]),
+});
 
 const timetableSchema = z.object({
   academicYearId: z.string().min(1, 'Academic year ID is required'),
@@ -317,6 +326,11 @@ const timetableGeneratePreviewSchema = z.object({
 }).refine((d) => (d.gradeIds?.length || 0) + (d.sectionIds?.length || 0) > 0, {
   message: 'Select at least one grade or section to generate a timetable for.',
   path: ['sectionIds'],
+});
+
+const timetableGeneratorDraftSchema = z.object({
+  currentStep: z.enum(['scope', 'periods', 'requirements', 'rooms', 'constraints', 'preview', 'confirm']),
+  wizardData: z.record(z.any()),
 });
 
 const timetableGenerateSlotSchema = z.object({
@@ -573,12 +587,14 @@ module.exports = {
   student360QuerySchema,
   periodSchema,
   updatePeriodSchema,
+  gradeSectionPeriodConfigSchema,
   timetableSchema,
   updateTimetableSchema,
   roomSchema,
   updateRoomSchema,
   timetableGeneratePreviewSchema,
   timetableGenerateSaveSchema,
+  timetableGeneratorDraftSchema,
   timetableValidateSlotSchema,
   timetableBulkUpdateSchema,
   timetableSwapSchema,

@@ -8,7 +8,11 @@
     "dev": "nodemon server.js",
     "seed": "node src/scripts/seedDatabase.js",
     "migrate:timetable-generator": "node src/scripts/migrateTimetableGeneratorPermissions.js",
-    "migrate:timetable-generator:dry-run": "node src/scripts/migrateTimetableGeneratorPermissions.js --dry-run"
+    "migrate:timetable-generator:dry-run": "node src/scripts/migrateTimetableGeneratorPermissions.js --dry-run",
+    "migrate:student-360": "node src/scripts/migrateStudent360Permissions.js",
+    "migrate:student-360:dry-run": "node src/scripts/migrateStudent360Permissions.js --dry-run",
+    "migrate:period-type": "node src/scripts/migratePeriodTypeField.js",
+    "migrate:period-type:dry-run": "node src/scripts/migratePeriodTypeField.js --dry-run"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

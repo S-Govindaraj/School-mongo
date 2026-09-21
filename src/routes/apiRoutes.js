@@ -37,12 +37,14 @@ const {
   student360QuerySchema,
   periodSchema,
   updatePeriodSchema,
+  gradeSectionPeriodConfigSchema,
   timetableSchema,
   updateTimetableSchema,
   roomSchema,
   updateRoomSchema,
   timetableGeneratePreviewSchema,
   timetableGenerateSaveSchema,
+  timetableGeneratorDraftSchema,
   timetableValidateSlotSchema,
   timetableBulkUpdateSchema,
   timetableSwapSchema,
@@ -72,7 +74,9 @@ const documentController = require('../controllers/documentController');
 const periodController = require('../controllers/periodController');
 const timetableController = require('../controllers/timetableController');
 const roomController = require('../controllers/roomController');
+const gradeSectionPeriodConfigController = require('../controllers/gradeSectionPeriodConfigController');
 const timetableGeneratorController = require('../controllers/timetableGeneratorController');
+const timetableGeneratorDraftController = require('../controllers/timetableGeneratorDraftController');
 const attendanceStatusController = require('../controllers/attendanceStatusController');
 const attendanceController = require('../controllers/attendanceController');
 const leaveRequestController = require('../controllers/leaveRequestController');
@@ -275,10 +279,18 @@ router.put('/rooms/:id', requirePermissions('room_manage'), validate(updateRoomS
 router.post('/rooms/:id/restore', requirePermissions('room_manage'), roomController.restoreRoom);
 router.delete('/rooms/:id', requirePermissions('room_manage'), roomController.deleteRoom);
 
+// --- Grade+Section instructional period selection (Smart Timetable Generator) ---
+// Different grades commonly run different period counts (Grade 1 = 4, Grade 5 = 8) — this
+// is what scopes generation to only the periods actually selected for that class.
+router.get('/grade-section-periods', requirePermissions('timetable_view'), gradeSectionPeriodConfigController.getGradeSectionPeriodConfig);
+router.put('/grade-section-periods', requirePermissions('timetable_manage'), validate(gradeSectionPeriodConfigSchema), gradeSectionPeriodConfigController.saveGradeSectionPeriodConfig);
+
 // --- Smart Timetable Generator ---
 router.post('/timetable-generator/preview', requirePermissions('timetable_generate'), validate(timetableGeneratePreviewSchema), timetableGeneratorController.previewGeneration);
 router.post('/timetable-generator/save', requirePermissions('timetable_generate'), validate(timetableGenerateSaveSchema), timetableGeneratorController.saveGeneration);
-router.post('/timetable-generator/draft', requirePermissions('timetable_generate'), timetableController.saveTimetableGeneratorDraft);
+router.get('/timetable-generator/draft', requirePermissions('timetable_generate'), timetableGeneratorDraftController.getTimetableGeneratorDraft);
+router.put('/timetable-generator/draft', requirePermissions('timetable_generate'), validate(timetableGeneratorDraftSchema), timetableGeneratorDraftController.saveTimetableGeneratorDraft);
+router.delete('/timetable-generator/draft', requirePermissions('timetable_generate'), timetableGeneratorDraftController.deleteTimetableGeneratorDraft);
 
 // --- Phase 3: Configurable Attendance Statuses ---
 router.get('/attendance/statuses', requirePermissions('attendance_status_view'), attendanceStatusController.getAttendanceStatuses);

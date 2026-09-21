@@ -58,10 +58,11 @@ const test = (name, fn) => {
     }
   });
 
-  const { singles, doubles } = buildSlotDomain(DAYS, ps);
-  test('40 available slots computed (5 days x 8 periods)', () => assert.strictEqual(singles.length, 40));
+  const domain = buildSlotDomain(DAYS, ps);
+  test('40 available slots computed (5 days x 8 periods)', () => assert.strictEqual(domain.singles.length, 40));
+  const slotDomainBySection = new Map([['sec8a', domain]]);
 
-  const result = runGeneration({ variables, singles, doubles, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'acceptance-example' });
+  const result = runGeneration({ variables, slotDomainBySection, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'acceptance-example' });
 
   test('all 30 requirements placed, none unscheduled', () => {
     assert.strictEqual(result.stats.placed, 30);
@@ -114,8 +115,8 @@ const test = (name, fn) => {
   ctx.teacherAssignments.set('sec8a|math|john', { sectionId: 'sec8a', subjectId: 'math', staffId: 'john' });
 
   const variables = Array.from({ length: 6 }, (_, i) => ({ id: `v${i}`, sectionId: 'sec8a', sectionName: '8A', gradeId: 'g8', subjectId: 'math', subjectName: 'Mathematics', teacherId: 'john', isDouble: false, weeklyPeriods: 6 }));
-  const { singles, doubles } = buildSlotDomain(DAYS, ps);
-  const result = runGeneration({ variables, singles, doubles, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'unavailability-test' });
+  const slotDomainBySection = new Map([['sec8a', buildSlotDomain(DAYS, ps)]]);
+  const result = runGeneration({ variables, slotDomainBySection, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'unavailability-test' });
 
   test('all 6 periods still placed by using the remaining days', () => assert.strictEqual(result.stats.placed, 6));
   test('never scheduled on the teacher\'s unavailable days', () => {
@@ -143,8 +144,8 @@ const test = (name, fn) => {
   // exactly mirroring the real lockedCountBySectionSubject subtraction.
   ctx.place({ sectionId: 'sec8a', dayOfWeek: 'MONDAY', periodId: 'p1', subjectId: 'math', teacherId: 'john' });
   const variables = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, sectionId: 'sec8a', sectionName: '8A', gradeId: 'g8', subjectId: 'math', subjectName: 'Mathematics', teacherId: 'john', isDouble: false, weeklyPeriods: 6 }));
-  const { singles, doubles } = buildSlotDomain(DAYS, ps);
-  const result = runGeneration({ variables, singles, doubles, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'locked-slot-test' });
+  const slotDomainBySection = new Map([['sec8a', buildSlotDomain(DAYS, ps)]]);
+  const result = runGeneration({ variables, slotDomainBySection, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'locked-slot-test' });
 
   test('the 5 remaining periods are placed (locked one already covers the 6th)', () => assert.strictEqual(result.stats.placed, 5));
   test('nothing new is ever placed at the locked slot\'s own position', () => {
@@ -189,6 +190,56 @@ const test = (name, fn) => {
   // — must be rejected even mid-swap, regardless of the other slot being free.
   const badSwap = TimetableValidatorService.validateSlot({ academicYearId: 'ay1', gradeId: 'g8', sectionId: 'sec8a', dayOfWeek: 'THURSDAY', periodId: 'p1', subjectId: 'math', teacherId: 'john' }, ctx, { hardOnly: true });
   test('invalid swap destination (teacher unavailable that day) is rejected', () => assert.strictEqual(badSwap.valid, false));
+})();
+
+// --- Scenario 5: different sections must use their OWN period count, never a shared global one ---
+(function perSectionPeriodCounts() {
+  console.log('\nScenario: Grade 1 (4 periods) and Grade 5 (8 periods) generate independently, each within its own capacity');
+  const ctx = new TimetableWorkingContext({ schoolId: 's1', academicYearId: 'ay1' });
+  const g1Periods = periods(4);
+  const g5Periods = periods(8);
+  // Same period _ids would collide, so give Grade 5 its own period id space.
+  g5Periods.forEach((p, i) => { p._id = `g5p${i + 1}`; });
+  [...g1Periods, ...g5Periods].forEach((p) => ctx.periods.set(p._id, p));
+  ctx.grades.set('g1', { _id: 'g1', status: 'ACTIVE' });
+  ctx.grades.set('g5', { _id: 'g5', status: 'ACTIVE' });
+  ctx.sections.set('sec1a', { _id: 'sec1a', gradeId: 'g1', status: 'ACTIVE' });
+  ctx.sections.set('sec5a', { _id: 'sec5a', gradeId: 'g5', status: 'ACTIVE' });
+  ctx.subjects.set('tamil', { _id: 'tamil', name: 'Tamil', status: 'ACTIVE', type: 'CORE' });
+  ctx.classSubjects.set('g1|tamil', { gradeId: 'g1', subjectId: 'tamil', weeklyPeriods: 4 });
+  ctx.classSubjects.set('g5|tamil', { gradeId: 'g5', subjectId: 'tamil', weeklyPeriods: 8 });
+  ctx.staffById.set('meena', { _id: 'meena', status: 'ACTIVE', unavailability: [] });
+  ctx.staffById.set('raja', { _id: 'raja', status: 'ACTIVE', unavailability: [] });
+  ctx.teacherAssignments.set('sec1a|tamil|meena', { sectionId: 'sec1a', subjectId: 'tamil', staffId: 'meena' });
+  ctx.teacherAssignments.set('sec5a|tamil|raja', { sectionId: 'sec5a', subjectId: 'tamil', staffId: 'raja' });
+
+  const variables = [
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `g1v${i}`, sectionId: 'sec1a', sectionName: 'Grade 1 - A', gradeId: 'g1', subjectId: 'tamil', subjectName: 'Tamil', teacherId: 'meena', isDouble: false, weeklyPeriods: 4 })),
+    ...Array.from({ length: 8 }, (_, i) => ({ id: `g5v${i}`, sectionId: 'sec5a', sectionName: 'Grade 5 - A', gradeId: 'g5', subjectId: 'tamil', subjectName: 'Tamil', teacherId: 'raja', isDouble: false, weeklyPeriods: 8 })),
+  ];
+
+  const slotDomainBySection = new Map([
+    ['sec1a', buildSlotDomain(DAYS, g1Periods)],
+    ['sec5a', buildSlotDomain(DAYS, g5Periods)],
+  ]);
+  test('Grade 1 domain has 20 slots (5 days x 4 periods), Grade 5 has 40 (5 days x 8)', () => {
+    assert.strictEqual(slotDomainBySection.get('sec1a').singles.length, 20);
+    assert.strictEqual(slotDomainBySection.get('sec5a').singles.length, 40);
+  });
+
+  const result = runGeneration({ variables, slotDomainBySection, ctx, academicYearId: 'ay1', constraints: { maxConsecutivePerSubject: 2, minGapPeriods: 0, distributionWeight: 5, preferredPeriodsWeight: 3 }, requestSeed: 'per-section-test' });
+
+  test('all 12 requirements placed (4 for Grade 1 + 8 for Grade 5), none unscheduled', () => {
+    assert.strictEqual(result.stats.placed, 12);
+    assert.strictEqual(result.unscheduled.length, 0);
+  });
+  test('Grade 1 never receives a slot from Grade 5\'s period id space, and vice versa', () => {
+    const g1Slots = result.slots.filter((s) => s.sectionId === 'sec1a');
+    const g5Slots = result.slots.filter((s) => s.sectionId === 'sec5a');
+    assert.ok(g1Slots.every((s) => !String(s.periodId).startsWith('g5p')), 'Grade 1 got a Grade-5-only period id');
+    assert.strictEqual(g1Slots.length, 4);
+    assert.strictEqual(g5Slots.length, 8);
+  });
 })();
 
 console.log(`\n${passed} check(s) passed.${process.exitCode ? ' Some checks FAILED — see above.' : ''}`);

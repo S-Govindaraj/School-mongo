@@ -1,5 +1,6 @@
 const Section = require('../models/Section');
 const Grade = require('../models/Grade');
+const Room = require('../models/Room');
 const TeacherAssignment = require('../models/TeacherAssignment');
 const Enrollment = require('../models/Enrollment');
 const Timetable = require('../models/Timetable');
@@ -26,6 +27,7 @@ const getSections = async (req, res, next) => {
 
     const sections = await Section.find(filter)
       .populate('gradeId', 'name code category')
+      .populate('roomId', 'name capacity isLab')
       .sort({ code: 1, name: 1 })
       .lean();
 
@@ -35,10 +37,23 @@ const getSections = async (req, res, next) => {
   }
 };
 
+/** Resolves a submitted `roomId` against the school's actual Room master and
+ * returns the {roomId, room} pair to persist — `room` (the legacy display
+ * string) is always kept in sync with the real room's name, never freely
+ * typed, so every place that still renders `section.room` shows real data. */
+const resolveRoomSelection = async (schoolId, roomId) => {
+  if (!roomId) return { roomId: undefined, room: '' };
+  const room = await Room.findOne({ _id: roomId, schoolId, status: 'ACTIVE' }).lean();
+  if (!room) {
+    throw new ValidationError('Selected room does not exist or is not an active room for this school.');
+  }
+  return { roomId: room._id, room: room.name };
+};
+
 const createSection = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { gradeId, name, code, capacity = 40, room = '', status: requestedStatus } = req.body;
+    const { gradeId, name, code, capacity = 40, roomId: requestedRoomId, status: requestedStatus } = req.body;
 
     const grade = await Grade.findOne({ _id: gradeId, schoolId });
     if (!grade) {
@@ -73,6 +88,7 @@ const createSection = async (req, res, next) => {
     }
 
     const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
+    const { roomId, room } = await resolveRoomSelection(schoolId, requestedRoomId);
 
     const section = await Section.create({
       schoolId,
@@ -80,7 +96,8 @@ const createSection = async (req, res, next) => {
       name: trimmedName,
       code: formattedCode,
       capacity: capNum,
-      room: String(room || '').trim(),
+      roomId,
+      room,
       status,
     });
 
@@ -167,7 +184,11 @@ const updateSection = async (req, res, next) => {
       section.name = trimmedName;
     }
 
-    if (req.body.room !== undefined) section.room = String(req.body.room || '').trim();
+    if (req.body.roomId !== undefined) {
+      const { roomId, room } = await resolveRoomSelection(schoolId, req.body.roomId);
+      section.roomId = roomId;
+      section.room = room;
+    }
     if (req.body.status) section.status = req.body.status;
 
     await section.save();
