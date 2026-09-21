@@ -34,10 +34,19 @@ const {
   admissionSchema,
   updateAdmissionStatusSchema,
   enrollmentSchema,
+  student360QuerySchema,
   periodSchema,
   updatePeriodSchema,
   timetableSchema,
   updateTimetableSchema,
+  roomSchema,
+  updateRoomSchema,
+  timetableGeneratePreviewSchema,
+  timetableGenerateSaveSchema,
+  timetableValidateSlotSchema,
+  timetableBulkUpdateSchema,
+  timetableSwapSchema,
+  timetablePublishSchema,
   leaveRequestSchema,
 } = require('../shared/validation/schemas');
 
@@ -55,12 +64,15 @@ const settingController = require('../controllers/settingController');
 const auditLogController = require('../controllers/auditLogController');
 const roleController = require('../controllers/roleController');
 const studentController = require('../controllers/studentController');
+const student360Controller = require('../controllers/student360Controller');
 const guardianController = require('../controllers/guardianController');
 const admissionController = require('../controllers/admissionController');
 const enrollmentController = require('../controllers/enrollmentController');
 const documentController = require('../controllers/documentController');
 const periodController = require('../controllers/periodController');
 const timetableController = require('../controllers/timetableController');
+const roomController = require('../controllers/roomController');
+const timetableGeneratorController = require('../controllers/timetableGeneratorController');
 const attendanceStatusController = require('../controllers/attendanceStatusController');
 const attendanceController = require('../controllers/attendanceController');
 const leaveRequestController = require('../controllers/leaveRequestController');
@@ -172,6 +184,26 @@ router.patch('/students/:id/status', requirePermissions('student_status_change')
 router.post('/students/:id/restore', requirePermissions('student_archive'), studentController.restoreStudent);
 router.delete('/students/:id', requirePermissions('student_archive'), studentController.deleteStudent);
 
+// --- Student 360 profile tabs ---
+router.get('/students/:studentId/360/overview', requirePermissions('student_view'), student360Controller.getOverview);
+router.get('/students/:studentId/360/academic-journey', requirePermissions('student_view'), student360Controller.getAcademicJourney);
+router.get('/students/:studentId/360/academic-journey/:academicYearId', requirePermissions('student_view'), student360Controller.getYearDetail);
+router.get('/students/:studentId/360/subjects-teachers', requirePermissions('student_view', 'class_subject_view'), validate(student360QuerySchema, 'query'), student360Controller.getSubjectsAndTeachers);
+router.get('/students/:studentId/360/attendance', requirePermissions('student_view', 'attendance_view'), validate(student360QuerySchema, 'query'), student360Controller.getAttendance);
+router.get('/students/:studentId/360/exams', requirePermissions('student_view', 'exam_result_view'), validate(student360QuerySchema, 'query'), student360Controller.getExamsResults);
+router.get('/students/:studentId/360/performance-trend', requirePermissions('student_view', 'exam_result_view'), student360Controller.getPerformanceTrend);
+router.get('/students/:studentId/360/finance', requirePermissions('student_view', 'invoice_view'), validate(student360QuerySchema, 'query'), student360Controller.getFinance);
+router.get('/students/:studentId/360/timetable', requirePermissions('student_view', 'timetable_view'), validate(student360QuerySchema, 'query'), student360Controller.getTimetable);
+router.get('/students/:studentId/360/guardians', requirePermissions('student_view', 'guardian_view'), student360Controller.getGuardians);
+router.get('/students/:studentId/360/documents', requirePermissions('student_view', 'document_view'), student360Controller.getDocuments);
+router.get('/students/:studentId/360/transport', requirePermissions('student_view', 'transport_assignment_view'), validate(student360QuerySchema, 'query'), student360Controller.getTransport);
+router.get('/students/:studentId/360/timeline', requirePermissions('student_view', 'audit_view'), student360Controller.getTimeline);
+// Discipline & Medical (Phase 2): deliberately no PERMISSION_ALIASES backward-compat entry for
+// discipline_view/medical_view — the highest-sensitivity tabs in this feature must be explicitly
+// granted per role (or via the '*' wildcard), never implicitly inherited from student_view.
+router.get('/students/:studentId/360/discipline', requirePermissions('student_view', 'discipline_view'), student360Controller.getDiscipline);
+router.get('/students/:studentId/360/medical', requirePermissions('student_view', 'medical_view'), student360Controller.getMedical);
+
 // --- Guardians ---
 router.get('/guardians', requirePermissions('guardian_view'), guardianController.getGuardians);
 router.get('/guardians/:id', requirePermissions('guardian_view'), guardianController.getGuardianById);
@@ -228,6 +260,25 @@ router.post('/timetables', requirePermissions('timetable_manage'), validate(time
 router.patch('/timetables/:id', requirePermissions('timetable_manage'), validate(updateTimetableSchema), timetableController.updateTimetableEntry);
 router.put('/timetables/:id', requirePermissions('timetable_manage'), validate(updateTimetableSchema), timetableController.updateTimetableEntry);
 router.delete('/timetables/:id', requirePermissions('timetable_manage'), timetableController.deleteTimetableEntry);
+router.post('/timetables/validate', requirePermissions('timetable_manage'), validate(timetableValidateSlotSchema), timetableController.validateSlotPreview);
+router.post('/timetables/:id/lock', requirePermissions('timetable_lock'), timetableController.lockTimetableEntry);
+router.post('/timetables/:id/unlock', requirePermissions('timetable_lock'), timetableController.unlockTimetableEntry);
+router.post('/timetables/publish', requirePermissions('timetable_publish'), validate(timetablePublishSchema), timetableController.publishTimetables);
+router.post('/timetables/bulk-update', requirePermissions('timetable_manage'), validate(timetableBulkUpdateSchema), timetableController.bulkUpdateTimetables);
+router.post('/timetables/swap', requirePermissions('timetable_manage'), validate(timetableSwapSchema), timetableController.swapTimetableEntries);
+
+// --- Rooms (Smart Timetable Generator) ---
+router.get('/rooms', requirePermissions('room_view'), roomController.getRooms);
+router.post('/rooms', requirePermissions('room_manage'), validate(roomSchema), roomController.createRoom);
+router.patch('/rooms/:id', requirePermissions('room_manage'), validate(updateRoomSchema), roomController.updateRoom);
+router.put('/rooms/:id', requirePermissions('room_manage'), validate(updateRoomSchema), roomController.updateRoom);
+router.post('/rooms/:id/restore', requirePermissions('room_manage'), roomController.restoreRoom);
+router.delete('/rooms/:id', requirePermissions('room_manage'), roomController.deleteRoom);
+
+// --- Smart Timetable Generator ---
+router.post('/timetable-generator/preview', requirePermissions('timetable_generate'), validate(timetableGeneratePreviewSchema), timetableGeneratorController.previewGeneration);
+router.post('/timetable-generator/save', requirePermissions('timetable_generate'), validate(timetableGenerateSaveSchema), timetableGeneratorController.saveGeneration);
+router.post('/timetable-generator/draft', requirePermissions('timetable_generate'), timetableController.saveTimetableGeneratorDraft);
 
 // --- Phase 3: Configurable Attendance Statuses ---
 router.get('/attendance/statuses', requirePermissions('attendance_status_view'), attendanceStatusController.getAttendanceStatuses);

@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const AcademicYear = require('../models/AcademicYear');
 const AcademicTerm = require('../models/AcademicTerm');
 const ClassSubject = require('../models/ClassSubject');
@@ -12,6 +11,7 @@ const ExamResult = require('../models/ExamResult');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { withTransactionOrFallback } = require('../utils/withTransaction');
 
 // Helper to normalize input like "2026 - 2027" or "2026-2027" to "2026-2027"
 const parseAndNormalizeYear = (rawYear) => {
@@ -36,33 +36,6 @@ const parseAndNormalizeYear = (rawYear) => {
   };
 };
 
-const withTransactionOrFallback = async (operation) => {
-  let session = null;
-  try {
-    session = await mongoose.startSession();
-    session.startTransaction();
-    const result = await operation(session);
-    await session.commitTransaction();
-    return result;
-  } catch (err) {
-    if (session) {
-      try {
-        await session.abortTransaction();
-      } catch (_) { }
-    }
-    // If running in standalone Mongo (e.g., local dev without replica set)
-    if (err.message && err.message.includes('replica set member or mongos')) {
-      return await operation(null);
-    }
-    throw err;
-  } finally {
-    if (session) {
-      try {
-        await session.endSession();
-      } catch (_) { }
-    }
-  }
-};
 
 const getAcademicYears = async (req, res, next) => {
   try {

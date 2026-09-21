@@ -1,72 +1,43 @@
 const Timetable = require('../models/Timetable');
 const AcademicYear = require('../models/AcademicYear');
-const Grade = require('../models/Grade');
-const Section = require('../models/Section');
-const Period = require('../models/Period');
-const Subject = require('../models/Subject');
-const Staff = require('../models/Staff');
-const ClassSubject = require('../models/ClassSubject');
-const TeacherAssignment = require('../models/TeacherAssignment');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { TimetableValidatorService } = require('../services/timetableValidatorService');
+const { TimetableLockService } = require('../services/timetableLockService');
+const { TimetablePublishService } = require('../services/timetablePublishService');
+const { TimetableBulkService } = require('../services/timetableBulkService');
 
+// Thin wrapper kept for the existing create/update call sites below — now
+// backed by the same TimetableValidatorService.validateSlot() the Smart
+// Timetable Generator and the /timetables/validate endpoint use, so manual
+// edits and automatic generation can never disagree on what a conflict is.
 const validateTimetableRelationsAndConflicts = async (schoolId, data, currentId = null) => {
-  const {
-    academicYearId,
-    gradeId,
-    sectionId,
-    dayOfWeek,
-    periodId,
-    subjectId,
-    teacherId,
-    roomNumber,
-  } = data;
-
-  // Phase 1: all independent entity lookups in parallel (6 queries → 1 round-trip)
-  const [year, grade, section, period, classSubject, teacher] = await Promise.all([
-    AcademicYear.findOne({ _id: academicYearId, schoolId }),
-    Grade.findOne({ _id: gradeId, schoolId }),
-    Section.findOne({ _id: sectionId, schoolId }),
-    Period.findOne({ _id: periodId, schoolId }),
-    ClassSubject.findOne({ schoolId, academicYearId, gradeId, subjectId, status: { $ne: 'ARCHIVED' } }),
-    Staff.findOne({ _id: teacherId, schoolId }),
-  ]);
-
-  if (!year)        throw new ValidationError('Selected academic year does not exist in this school.');
-  if (!grade)       throw new ValidationError('Selected grade does not exist in this school.');
-  if (!section)     throw new ValidationError('Selected section does not exist in this school.');
-  if (String(section.gradeId) !== String(gradeId))
-                    throw new ValidationError('Selected section does not belong to the selected grade.');
-  if (!period)      throw new ValidationError('Selected period does not exist in this school.');
-  if (!classSubject) throw new ValidationError('This subject is not configured for the selected class.');
-  if (!teacher)     throw new ValidationError('Selected teacher does not exist in this school.');
-
-  // Phase 2: assignment + conflict checks in parallel (4 queries → 1 round-trip)
-  const room = String(roomNumber || '').trim();
-
-  const sectionConflictQuery = { schoolId, academicYearId, sectionId, dayOfWeek, periodId, status: { $ne: 'ARCHIVED' } };
-  const teacherConflictQuery = { schoolId, academicYearId, teacherId, dayOfWeek, periodId, status: { $ne: 'ARCHIVED' } };
-  const roomConflictQuery    = room ? { schoolId, academicYearId, roomNumber: room, dayOfWeek, periodId, status: { $ne: 'ARCHIVED' } } : null;
-  const assignmentQuery      = { schoolId, academicYearId, gradeId, sectionId, subjectId, staffId: teacherId, status: { $ne: 'ARCHIVED' } };
-
-  if (currentId) {
-    sectionConflictQuery._id = { $ne: currentId };
-    teacherConflictQuery._id = { $ne: currentId };
-    if (roomConflictQuery) roomConflictQuery._id = { $ne: currentId };
+  const ctx = await TimetableValidatorService.buildScopedContext(schoolId, data, currentId);
+  const { valid, conflicts } = TimetableValidatorService.validateSlot(
+    { ...data, excludeTimetableId: currentId },
+    ctx,
+    { hardOnly: true }
+  );
+  if (!valid) {
+    const first = conflicts.find((c) => c.severity === 'HARD') || conflicts[0];
+    throw new ValidationError(first.message, conflicts);
   }
+};
 
-  const [assignment, sectionConflict, teacherConflict, roomConflict] = await Promise.all([
-    TeacherAssignment.findOne(assignmentQuery),
-    Timetable.findOne(sectionConflictQuery),
-    Timetable.findOne(teacherConflictQuery),
-    roomConflictQuery ? Timetable.findOne(roomConflictQuery) : Promise.resolve(null),
-  ]);
-
-  if (!assignment)    throw new ValidationError('This teacher is not assigned to teach this subject to the selected section.');
-  if (sectionConflict) throw new ValidationError('This class already has a timetable entry for the selected period.');
-  if (teacherConflict) throw new ValidationError('This teacher is already assigned during the selected period.');
-  if (roomConflict)    throw new ValidationError(`This room '${room}' is already occupied during the selected period.`);
+const validateSlotPreview = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const ctx = await TimetableValidatorService.buildScopedContext(schoolId, req.body, req.body.excludeTimetableId || null);
+    const result = TimetableValidatorService.validateSlot(
+      { ...req.body, excludeTimetableId: req.body.excludeTimetableId || null },
+      ctx,
+      { hardOnly: false, constraints: req.body.constraints || {} }
+    );
+    return successResponse(res, result, result.valid ? 'No conflicts found' : 'Conflicts found');
+  } catch (error) {
+    next(error);
+  }
 };
 
 const getTimetables = async (req, res, next) => {
@@ -173,6 +144,7 @@ const createTimetableEntry = async (req, res, next) => {
       subjectId,
       teacherId,
       roomNumber,
+      roomId,
       status = 'INACTIVE',
     } = req.body;
 
@@ -186,6 +158,8 @@ const createTimetableEntry = async (req, res, next) => {
       subjectId,
       teacherId,
       roomNumber: String(roomNumber || '').trim(),
+      roomId: roomId || undefined,
+      source: 'MANUAL',
       status,
     });
 
@@ -195,7 +169,8 @@ const createTimetableEntry = async (req, res, next) => {
       .populate('sectionId', 'name code room')
       .populate('periodId', 'name code sequence startTime endTime')
       .populate('subjectId', 'name code shortName')
-      .populate('teacherId', 'firstName lastName employeeId');
+      .populate('teacherId', 'firstName lastName employeeId')
+      .populate('roomId', 'name capacity isLab');
 
     await logAuditEvent({
       schoolId,
@@ -224,12 +199,19 @@ const updateTimetableEntry = async (req, res, next) => {
 
     const entry = await Timetable.findOne({ _id: id, schoolId });
     if (!entry) throw new NotFoundError('Timetable entry not found');
+    if (entry.isLocked) throw new ValidationError('This timetable slot is locked and cannot be edited.');
 
     const oldValues = entry.toObject();
     const merged = { ...entry.toObject(), ...req.body };
     await validateTimetableRelationsAndConflicts(schoolId, merged, id);
 
     Object.assign(entry, req.body);
+    if (
+      (oldValues.source === 'AUTO_GENERATED' || oldValues.source === 'AUTO_GENERATED_THEN_EDITED') &&
+      Object.keys(req.body).some((k) => k !== 'status')
+    ) {
+      entry.source = 'AUTO_GENERATED_THEN_EDITED';
+    }
     await entry.save();
 
     const populated = await Timetable.findById(entry._id)
@@ -238,7 +220,8 @@ const updateTimetableEntry = async (req, res, next) => {
       .populate('sectionId', 'name code room')
       .populate('periodId', 'name code sequence startTime endTime')
       .populate('subjectId', 'name code shortName')
-      .populate('teacherId', 'firstName lastName employeeId');
+      .populate('teacherId', 'firstName lastName employeeId')
+      .populate('roomId', 'name capacity isLab');
 
     await logAuditEvent({
       schoolId,
@@ -268,6 +251,7 @@ const deleteTimetableEntry = async (req, res, next) => {
 
     const entry = await Timetable.findOne({ _id: id, schoolId });
     if (!entry) throw new NotFoundError('Timetable entry not found');
+    if (entry.isLocked) throw new ValidationError('This timetable slot is locked and cannot be removed.');
 
     entry.status = 'ARCHIVED';
     await entry.save();
@@ -291,6 +275,84 @@ const deleteTimetableEntry = async (req, res, next) => {
   }
 };
 
+const lockTimetableEntry = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const entry = await TimetableLockService.lock(schoolId, req.params.id, req.user);
+    return successResponse(res, entry, 'Timetable slot locked successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const unlockTimetableEntry = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const entry = await TimetableLockService.unlock(schoolId, req.params.id, req.user);
+    return successResponse(res, entry, 'Timetable slot unlocked successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const publishTimetables = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const result = await TimetablePublishService.publish(schoolId, req.body, req.user);
+    return successResponse(res, result, 'Timetable published successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const bulkUpdateTimetables = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const count = await TimetableBulkService.applyBulkUpdate(schoolId, req.body.updates, req.user);
+    return successResponse(res, { count }, 'Timetable entries updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const swapTimetableEntries = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const count = await TimetableBulkService.swap(schoolId, req.body.timetableIdA, req.body.timetableIdB, req.user);
+    return successResponse(res, { count }, 'Timetable slots swapped successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const saveTimetableGeneratorDraft = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { academicYearId, gradeIds, sectionIds, currentStep, draftData } = req.body;
+
+    if (!academicYearId || !gradeIds?.length) {
+      throw new ValidationError('Academic Year and Grades are required');
+    }
+
+    // Store draft in a simple JSON structure (or use localStorage on frontend)
+    // This is just for reference — in production, you might use a TimetableDraft model
+    const draftMeta = {
+      schoolId,
+      userId: req.user?._id,
+      academicYearId,
+      gradeIds,
+      sectionIds,
+      currentStep,
+      draftData,
+      savedAt: new Date(),
+    };
+
+    return successResponse(res, draftMeta, 'Timetable draft saved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTimetables,
   getSectionTimetable,
@@ -298,4 +360,11 @@ module.exports = {
   createTimetableEntry,
   updateTimetableEntry,
   deleteTimetableEntry,
+  validateSlotPreview,
+  lockTimetableEntry,
+  unlockTimetableEntry,
+  publishTimetables,
+  bulkUpdateTimetables,
+  swapTimetableEntries,
+  saveTimetableGeneratorDraft,
 };

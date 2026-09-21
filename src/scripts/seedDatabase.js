@@ -68,6 +68,9 @@ const permissionsData = [
   { id: 'guardian_view', module: 'Student Management', action: 'view', code: 'guardian_view', name: 'View Guardians', description: 'View parent and guardian directory' },
   { id: 'guardian_create', module: 'Student Management', action: 'create', code: 'guardian_create', name: 'Create Guardians', description: 'Create parent and guardian profiles' },
   { id: 'guardian_update', module: 'Student Management', action: 'update', code: 'guardian_update', name: 'Update Guardians', description: 'Update guardian details' },
+  { id: 'exam_result_view', module: 'Student Management', action: 'view', code: 'exam_result_view', name: 'View Exam Results', description: 'View student exam results in the Student 360 profile' },
+  { id: 'discipline_view', module: 'Student Management', action: 'view', code: 'discipline_view', name: 'View Discipline Records', description: 'View student discipline incidents and disciplinary actions (sensitive — must be granted explicitly per role)' },
+  { id: 'medical_view', module: 'Student Management', action: 'view', code: 'medical_view', name: 'View Medical Records', description: 'View student health profile and medical visit history (sensitive — must be granted explicitly per role)' },
   { id: 'admission_view', module: 'Admissions & Enrollment', action: 'view', code: 'admission_view', name: 'View Admissions', description: 'View admission applications' },
   { id: 'admission_create', module: 'Admissions & Enrollment', action: 'create', code: 'admission_create', name: 'Submit Admissions', description: 'Create admission applications' },
   { id: 'admission_update', module: 'Admissions & Enrollment', action: 'update', code: 'admission_update', name: 'Update Admissions', description: 'Update application status and review notes' },
@@ -116,6 +119,11 @@ const permissionsData = [
   { id: 'period_manage', module: 'Academic Operations', action: 'manage', code: 'period_manage', name: 'Manage Periods', description: 'Configure bell schedule periods' },
   { id: 'timetable_view', module: 'Academic Operations', action: 'view', code: 'timetable_view', name: 'View Timetable', description: 'View class and teacher timetables' },
   { id: 'timetable_manage', module: 'Academic Operations', action: 'manage', code: 'timetable_manage', name: 'Manage Timetable', description: 'Create and edit timetable matrix entries' },
+  { id: 'timetable_generate', module: 'Academic Operations', action: 'manage', code: 'timetable_generate', name: 'Generate Timetable', description: 'Run the Smart Timetable Generator, including regenerate section/subject' },
+  { id: 'timetable_publish', module: 'Academic Operations', action: 'manage', code: 'timetable_publish', name: 'Publish Timetable', description: 'Publish a saved/generated timetable as the official schedule' },
+  { id: 'timetable_lock', module: 'Academic Operations', action: 'manage', code: 'timetable_lock', name: 'Lock Timetable', description: 'Lock or unlock individual timetable slots to protect them from edits and regeneration' },
+  { id: 'room_view', module: 'Academic Operations', action: 'view', code: 'room_view', name: 'View Rooms', description: 'View rooms and labs used for scheduling' },
+  { id: 'room_manage', module: 'Academic Operations', action: 'manage', code: 'room_manage', name: 'Manage Rooms', description: 'Configure rooms and labs' },
 
   // Phase 3: Attendance Engine
   { id: 'attendance_view', module: 'Attendance & Leave', action: 'view', code: 'attendance_view', name: 'View Attendance', description: 'View student attendance summaries and sessions' },

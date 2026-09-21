@@ -107,6 +107,23 @@ const PERMISSION_ALIASES = {
   'parent_portal_view': ['parent_portal_view', 'parent_portal.view', 'school_view', 'admin_view'],
   'teacher_portal_view': ['teacher_portal_view', 'teacher_portal.view', 'teacher_view', 'staff_view', 'school_view'],
   'student_portal_view': ['student_portal_view', 'student_portal.view', 'student_view', 'school_view'],
+
+  // Smart Timetable Generator: these are new, more granular permissions split
+  // out of the pre-existing 'timetable_manage'. Any role that already had
+  // 'timetable_manage' before this feature existed keeps working immediately
+  // without needing a manual role update — same backward-compatibility
+  // pattern as every other resource above.
+  'timetable_generate': ['timetable_generate', 'timetable_manage'],
+  'timetable_publish': ['timetable_publish', 'timetable_manage'],
+  'timetable_lock': ['timetable_lock', 'timetable_manage'],
+  'room_view': ['room_view', 'room_manage', 'timetable_manage', 'period_manage'],
+  'room_manage': ['room_manage', 'timetable_manage'],
+
+  // Student 360: exam_result_view is a brand-new permission (ExamResult had no
+  // API surface before this feature) — aliased to student_view so any role that
+  // could already view a student's profile can see their exam results too,
+  // without needing a manual role update.
+  'exam_result_view': ['exam_result_view', 'student_view'],
 };
 
 const requirePermissions = (...requiredPermissions) => {

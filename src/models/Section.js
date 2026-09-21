@@ -8,6 +8,8 @@ const sectionSchema = new mongoose.Schema(
     code: { type: String, required: true, trim: true, uppercase: true, maxlength: 50 },
     capacity: { type: Number, required: true, min: 1, default: 40 },
     room: { type: String, default: '', trim: true },
+    // Optional default homeroom used by the timetable generator for non-lab subjects.
+    roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room' },
     status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'INACTIVE' },
   },
   { timestamps: true }

@@ -276,10 +276,107 @@ const timetableSchema = z.object({
   subjectId: z.string().min(1, 'Subject ID is required'),
   teacherId: z.string().min(1, 'Teacher ID is required'),
   roomNumber: z.string().trim().default(''),
+  roomId: z.string().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
 });
 
 const updateTimetableSchema = timetableSchema.partial();
+
+const roomSchema = z.object({
+  name: z.string().trim().min(1, 'Room name is required').max(50),
+  campusId: z.string().optional(),
+  capacity: z.number().int().min(1).default(30),
+  isLab: z.boolean().default(false),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
+});
+
+const updateRoomSchema = roomSchema.partial();
+
+const timetableGenerateConstraintsSchema = z.object({
+  maxConsecutivePerSubject: z.number().int().min(1).max(10).default(2),
+  minGapPeriods: z.number().int().min(0).max(5).default(0),
+  distributionWeight: z.number().min(0).max(10).default(5),
+  preferredPeriodsWeight: z.number().min(0).max(10).default(3),
+}).default({});
+
+const timetableGeneratePreviewSchema = z.object({
+  academicYearId: z.string().min(1, 'Academic year is required'),
+  campusId: z.string().optional(),
+  gradeIds: z.array(z.string()).optional(),
+  sectionIds: z.array(z.string()).optional(),
+  days: z.array(z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']))
+    .min(1, 'Select at least one working day')
+    .default(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']),
+  allowDoublePeriods: z.boolean().default(true),
+  constraints: timetableGenerateConstraintsSchema,
+  // Mode 3/4 (regenerate): when set, generation is confined to this one
+  // subject within the selected section(s) — every other subject's existing
+  // slots are treated as fixed, immovable occupants. Locked slots are always
+  // preserved regardless of this field.
+  regenerateSubjectId: z.string().optional(),
+}).refine((d) => (d.gradeIds?.length || 0) + (d.sectionIds?.length || 0) > 0, {
+  message: 'Select at least one grade or section to generate a timetable for.',
+  path: ['sectionIds'],
+});
+
+const timetableGenerateSlotSchema = z.object({
+  gradeId: z.string().min(1),
+  sectionId: z.string().min(1),
+  dayOfWeek: z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']),
+  periodId: z.string().min(1),
+  subjectId: z.string().min(1),
+  teacherId: z.string().min(1),
+  roomId: z.string().optional(),
+  roomNumber: z.string().trim().optional(),
+});
+
+const timetableGenerateSaveSchema = z.object({
+  academicYearId: z.string().min(1, 'Academic year is required'),
+  mode: z.enum(['REPLACE', 'MERGE', 'REGENERATE_SUBJECT']).default('REPLACE'),
+  targetSectionIds: z.array(z.string()).min(1, 'At least one target section is required'),
+  // Required when mode is REGENERATE_SUBJECT — scopes the archive step to just
+  // this subject's own prior slots instead of the whole section.
+  subjectId: z.string().optional(),
+  slots: z.array(timetableGenerateSlotSchema).min(1, 'The generated timetable has no slots to save'),
+  // Carried through from the preview response purely for the audit record —
+  // never trusted for validation, which always re-runs fresh at save time.
+  generationSummary: z.record(z.string(), z.any()).optional(),
+}).refine((d) => d.mode !== 'REGENERATE_SUBJECT' || !!d.subjectId, {
+  message: 'subjectId is required when mode is REGENERATE_SUBJECT.',
+  path: ['subjectId'],
+});
+
+const timetableValidateSlotSchema = timetableSchema.extend({
+  roomId: z.string().optional(),
+  excludeTimetableId: z.string().optional(),
+});
+
+const timetableBulkUpdateItemSchema = z.object({
+  id: z.string().min(1, 'Timetable entry ID is required'),
+  dayOfWeek: z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']).optional(),
+  periodId: z.string().optional(),
+  subjectId: z.string().optional(),
+  teacherId: z.string().optional(),
+  roomId: z.string().optional(),
+  roomNumber: z.string().trim().optional(),
+});
+
+const timetableBulkUpdateSchema = z.object({
+  updates: z.array(timetableBulkUpdateItemSchema).min(1, 'At least one update is required').max(200, 'Too many updates in one batch'),
+});
+
+const timetableSwapSchema = z.object({
+  timetableIdA: z.string().min(1, 'First timetable entry ID is required'),
+  timetableIdB: z.string().min(1, 'Second timetable entry ID is required'),
+}).refine((d) => d.timetableIdA !== d.timetableIdB, {
+  message: 'Cannot swap a timetable slot with itself.',
+  path: ['timetableIdB'],
+});
+
+const timetablePublishSchema = z.object({
+  academicYearId: z.string().min(1, 'Academic year is required'),
+  sectionIds: z.array(z.string()).min(1, 'At least one section is required'),
+});
 
 const baseLeaveRequestObject = z.object({
   studentId: z.string().optional(),
@@ -437,6 +534,10 @@ const enrollmentSchema = z.object({
   sectionId: z.string().min(1, 'Section is required'),
 });
 
+const student360QuerySchema = z.object({
+  academicYearId: z.string().optional(),
+});
+
 module.exports = {
   schoolProfileSchema,
   campusSchema,
@@ -469,10 +570,19 @@ module.exports = {
   admissionSchema,
   updateAdmissionStatusSchema,
   enrollmentSchema,
+  student360QuerySchema,
   periodSchema,
   updatePeriodSchema,
   timetableSchema,
   updateTimetableSchema,
+  roomSchema,
+  updateRoomSchema,
+  timetableGeneratePreviewSchema,
+  timetableGenerateSaveSchema,
+  timetableValidateSlotSchema,
+  timetableBulkUpdateSchema,
+  timetableSwapSchema,
+  timetablePublishSchema,
   leaveRequestSchema,
   normalizeAcademicYearString,
   validateAcademicYearYears,

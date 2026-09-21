@@ -16,6 +16,23 @@ const staffSchema = new mongoose.Schema(
     experienceYears: { type: Number, default: 0 },
     isTeachingStaff: { type: Boolean, default: true },
     status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'ACTIVE' },
+    // Timetable generator inputs. Empty `periods` array means unavailable the whole day;
+    // a populated array means unavailable only for those specific periods.
+    unavailability: {
+      type: [
+        {
+          dayOfWeek: {
+            type: String,
+            enum: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+            required: true,
+          },
+          periods: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Period' }],
+        },
+      ],
+      default: [],
+      _id: false,
+    },
+    preferredPeriods: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Period' }],
   },
   { timestamps: true }
 );

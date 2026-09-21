@@ -24,5 +24,7 @@ const examResultSchema = new mongoose.Schema(
 
 examResultSchema.index({ schoolId: 1, studentId: 1, gradeId: 1 });
 examResultSchema.index({ schoolId: 1, gradeId: 1, sectionId: 1, subjectId: 1 });
+// Student 360: exams tab + performance trend chart query by student+year
+examResultSchema.index({ schoolId: 1, studentId: 1, academicYearId: 1 });
 
 module.exports = mongoose.model('ExamResult', examResultSchema);
