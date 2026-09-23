@@ -124,6 +124,30 @@ const PERMISSION_ALIASES = {
   // could already view a student's profile can see their exam results too,
   // without needing a manual role update.
   'exam_result_view': ['exam_result_view', 'student_view'],
+
+  // Examinations: new permissions for the exam creation/scheduling/marks-entry/
+  // publishing pipeline. exam_view/exam_marks_enter/exam_result_calculate are
+  // aliased to the broader exam_manage so an admin who can already manage exams
+  // isn't blocked. exam_marks_verify/exam_result_publish/exam_lock are
+  // deliberately given NO alias (explicit-grant-only), matching the
+  // discipline_view/medical_view pattern for sensitive, student/parent-visible actions.
+  'exam_view': ['exam_view', 'exam_manage'],
+  'exam_manage': ['exam_manage'],
+  'exam_marks_enter': ['exam_marks_enter', 'exam_manage'],
+  'exam_marks_verify': ['exam_marks_verify'],
+  'exam_result_calculate': ['exam_result_calculate', 'exam_manage'],
+  'exam_result_publish': ['exam_result_publish'],
+  'exam_lock': ['exam_lock'],
+
+  // Examinations Phase 2 (Tranche 2c): correction-request/approval workflow.
+  // exam_correction_view/exam_correction_request are aliased to exam_manage,
+  // same convention as exam_view/exam_marks_enter above. exam_correction_approve
+  // is deliberately given NO alias (explicit-grant-only), matching the
+  // exam_marks_verify/exam_result_publish/exam_lock pattern for sensitive
+  // actions that bypass a LOCKED exam's normal guard.
+  'exam_correction_view': ['exam_correction_view', 'exam_view', 'exam_manage'],
+  'exam_correction_request': ['exam_correction_request', 'exam_marks_enter', 'exam_manage'],
+  'exam_correction_approve': ['exam_correction_approve'],
 };
 
 const requirePermissions = (...requiredPermissions) => {

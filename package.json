@@ -12,7 +12,15 @@
     "migrate:student-360": "node src/scripts/migrateStudent360Permissions.js",
     "migrate:student-360:dry-run": "node src/scripts/migrateStudent360Permissions.js --dry-run",
     "migrate:period-type": "node src/scripts/migratePeriodTypeField.js",
-    "migrate:period-type:dry-run": "node src/scripts/migratePeriodTypeField.js --dry-run"
+    "migrate:period-type:dry-run": "node src/scripts/migratePeriodTypeField.js --dry-run",
+    "migrate:exam-permissions": "node src/scripts/migrateExamPermissions.js",
+    "migrate:exam-permissions:dry-run": "node src/scripts/migrateExamPermissions.js --dry-run",
+    "migrate:exam-permissions-phase2": "node src/scripts/migratePhase2ExamPermissions.js",
+    "migrate:exam-permissions-phase2:dry-run": "node src/scripts/migratePhase2ExamPermissions.js --dry-run",
+    "seed:portal-demo": "node src/scripts/seedPortalDemoData.js",
+    "seed:portal-demo:dry-run": "node src/scripts/seedPortalDemoData.js --dry-run",
+    "seed:student360-demo": "node src/scripts/seedStudent360DemoData.js",
+    "seed:student360-demo:dry-run": "node src/scripts/seedStudent360DemoData.js --dry-run"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -25,6 +33,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.1",
+    "pdfkit": "^0.15.2",
     "winston": "^3.13.0",
     "zod": "^4.6.5"
   },

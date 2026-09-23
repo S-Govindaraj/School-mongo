@@ -6,7 +6,34 @@ const Student = require('../models/Student');
 const Announcement = require('../models/Announcement');
 const Notification = require('../models/Notification');
 const Staff = require('../models/Staff');
+const Exam = require('../models/Exam');
+const ExamSubject = require('../models/ExamSubject');
 const { successResponse, errorResponse } = require('../utils/response');
+
+// Resolves this teacher's {gradeId, subjectId} pairs from their ACTIVE
+// TeacherAssignment rows, then finds ExamSubject rows for those pairs
+// belonging to an exam that is currently ONGOING or COMPLETED (i.e. marks
+// entry is expected) and that have not yet been verified.
+const findPendingMarksExamSubjectQuery = async (schoolId, assignments) => {
+  const gradeSubjectPairs = (assignments || [])
+    .filter((a) => a.gradeId?._id && a.subjectId?._id)
+    .map((a) => ({ gradeId: a.gradeId._id, subjectId: a.subjectId._id }));
+
+  if (gradeSubjectPairs.length === 0) return null;
+
+  const eligibleExams = await Exam.find({ schoolId, status: { $in: ['ONGOING', 'COMPLETED'] } })
+    .select('_id')
+    .lean();
+  const eligibleExamIds = eligibleExams.map((e) => e._id);
+  if (eligibleExamIds.length === 0) return null;
+
+  return {
+    schoolId,
+    examId: { $in: eligibleExamIds },
+    marksVerifiedAt: { $exists: false },
+    $or: gradeSubjectPairs,
+  };
+};
 
 const getTeacherDashboardData = async (req, res, next) => {
   try {
@@ -33,6 +60,7 @@ const getTeacherDashboardData = async (req, res, next) => {
 
     let rawTodayClasses = [];
     let assignedClasses = [];
+    let teacherAssignments = [];
 
     if (teacherId) {
       // 1. Query real teacher assignments and calculate real enrolled student counts
@@ -45,6 +73,8 @@ const getTeacherDashboardData = async (req, res, next) => {
         .populate('sectionId', 'name code')
         .populate('subjectId', 'name code')
         .lean();
+
+      teacherAssignments = assignments;
 
       assignedClasses = await Promise.all(
         assignments.map(async (a) => {
@@ -136,7 +166,14 @@ const getTeacherDashboardData = async (req, res, next) => {
       : [];
 
     const pendingAttendance = Math.max(0, todayClasses.length - completedSessions.length);
-    const pendingMarks = Math.max(0, Math.min(assignedClasses.length, 3));
+
+    // Real pending-marks count: ExamSubject rows for this teacher's grade/subject
+    // assignments, on an ONGOING/COMPLETED exam, not yet marks-verified.
+    let pendingMarks = 0;
+    const pendingMarksQuery = await findPendingMarksExamSubjectQuery(schoolId, teacherAssignments);
+    if (pendingMarksQuery) {
+      pendingMarks = await ExamSubject.countDocuments(pendingMarksQuery);
+    }
 
     // 4. Real Announcements
     const [announcements, unreadNotifications] = await Promise.all([
@@ -335,9 +372,58 @@ const getTeacherAssignedStudents = async (req, res, next) => {
   }
 };
 
+// Teacher Portal "My Examinations" tab: the teacher's exam-subjects that
+// still need marks entered/verified, for an exam that is ONGOING or COMPLETED.
+const getMyExams = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext.schoolId;
+    const userId = req.user?._id;
+    const userEmail = req.user?.email;
+
+    let staff = await Staff.findOne({
+      schoolId,
+      $or: [
+        ...(userId ? [{ userId }] : []),
+        ...(userEmail ? [{ email: userEmail }] : []),
+      ],
+    });
+
+    if (!staff) {
+      staff = await Staff.findOne({ schoolId, isTeachingStaff: true, status: 'ACTIVE' });
+    }
+    if (!staff) {
+      return errorResponse(res, 'Teacher profile not found', 404, 'NOT_FOUND');
+    }
+
+    const assignments = await TeacherAssignment.find({
+      schoolId,
+      $or: [{ staffId: staff._id }, { teacherId: staff._id }],
+      status: 'ACTIVE',
+    })
+      .populate('gradeId', 'name code')
+      .populate('subjectId', 'name code')
+      .lean();
+
+    const pendingMarksQuery = await findPendingMarksExamSubjectQuery(schoolId, assignments);
+    const examSubjects = pendingMarksQuery
+      ? await ExamSubject.find(pendingMarksQuery)
+          .populate('examId', 'title status')
+          .populate('subjectId', 'name')
+          .populate('gradeId', 'name')
+          .sort({ examDate: 1 })
+          .lean()
+      : [];
+
+    return successResponse(res, examSubjects, 'My examinations retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTeacherDashboardData,
   getTeacherTodayClasses,
   getTeacherAssignedClasses,
   getTeacherAssignedStudents,
+  getMyExams,
 };

@@ -143,7 +143,7 @@ const getParentDashboardData = async (req, res, next) => {
 
     // 2. Real Invoices & Fees Summary
     const invoices = await Invoice.find({ schoolId, studentId: sId, status: { $ne: 'CANCELLED' } })
-      .sort({ issueDate: -1 })
+      .sort({ invoiceDate: -1 })
       .lean();
 
     const totalAmount = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
@@ -313,7 +313,7 @@ const getChildFees = async (req, res, next) => {
     }
 
     const [invoices, payments] = await Promise.all([
-      Invoice.find({ schoolId, studentId, status: { $ne: 'CANCELLED' } }).sort({ issueDate: -1, createdAt: -1 }).lean(),
+      Invoice.find({ schoolId, studentId, status: { $ne: 'CANCELLED' } }).sort({ invoiceDate: -1, createdAt: -1 }).lean(),
       Payment.find({ schoolId, studentId, status: 'SUCCESS' }).sort({ paymentDate: -1 }).lean(),
     ]);
 

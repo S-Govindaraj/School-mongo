@@ -51,6 +51,18 @@ const {
   timetablePublishSchema,
   leaveRequestSchema,
 } = require('../shared/validation/schemas');
+const {
+  examSchema,
+  updateExamSchema,
+  examSubjectBulkSchema,
+  marksEntryBatchSchema,
+  examPublishSchema,
+  examUnlockSchema,
+} = require('../shared/validation/examSchemas');
+const {
+  resultCorrectionRequestSchema,
+  resultCorrectionRejectSchema,
+} = require('../shared/validation/resultCorrectionSchemas');
 
 // Controllers
 const schoolController = require('../controllers/schoolController');
@@ -62,6 +74,11 @@ const subjectController = require('../controllers/subjectController');
 const classSubjectController = require('../controllers/classSubjectController');
 const staffController = require('../controllers/staffController');
 const teacherAssignmentController = require('../controllers/teacherAssignmentController');
+const examController = require('../controllers/examController');
+const examSubjectController = require('../controllers/examSubjectController');
+const resultController = require('../controllers/resultController');
+const reportCardController = require('../controllers/reportCardController');
+const resultCorrectionController = require('../controllers/resultCorrectionController');
 const settingController = require('../controllers/settingController');
 const auditLogController = require('../controllers/auditLogController');
 const roleController = require('../controllers/roleController');
@@ -178,6 +195,46 @@ router.patch('/teacher-assignments/:id', requirePermissions('teacher_assignment_
 router.put('/teacher-assignments/:id', requirePermissions('teacher_assignment_manage'), validate(updateTeacherAssignmentSchema), teacherAssignmentController.updateTeacherAssignment);
 router.post('/teacher-assignments/:id/restore', requirePermissions('teacher_assignment_manage'), teacherAssignmentController.restoreTeacherAssignment);
 router.delete('/teacher-assignments/:id', requirePermissions('teacher_assignment_manage'), teacherAssignmentController.deleteTeacherAssignment);
+
+// --- Examinations ---
+router.get('/exams', requirePermissions('exam_view'), examController.getExams);
+router.get('/exams/:id', requirePermissions('exam_view'), examController.getExamById);
+router.post('/exams', requirePermissions('exam_manage'), validate(examSchema), examController.createExam);
+router.patch('/exams/:id', requirePermissions('exam_manage'), validate(updateExamSchema), examController.updateExam);
+router.delete('/exams/:id', requirePermissions('exam_manage'), examController.archiveExam);
+router.get('/exams/:examId/subjects', requirePermissions('exam_view'), examController.getExamSubjects);
+router.post('/exams/:examId/subjects', requirePermissions('exam_manage'), validate(examSubjectBulkSchema), examController.setExamSubjects);
+router.post('/exams/:id/confirm-schedule', requirePermissions('exam_manage'), examController.confirmSchedule);
+router.post('/exams/:id/start', requirePermissions('exam_manage'), examController.startExam);
+router.post('/exams/:id/complete', requirePermissions('exam_manage'), examController.completeExam);
+router.get('/exam-subjects/:id/marks', requirePermissions('exam_marks_enter'), examSubjectController.getMarksGrid);
+router.post('/exam-subjects/:id/marks', requirePermissions('exam_marks_enter'), validate(marksEntryBatchSchema), examSubjectController.saveMarksBatch);
+router.post('/exam-subjects/:id/verify', requirePermissions('exam_marks_verify'), examSubjectController.verifyMarks);
+router.post('/exams/:id/calculate-results', requirePermissions('exam_result_calculate'), resultController.calculateResults);
+router.post('/exams/:id/publish', requirePermissions('exam_result_publish'), validate(examPublishSchema), resultController.publishResults);
+router.get('/exams/:id/rankings', requirePermissions('exam_result_view'), resultController.getExamRankings);
+router.get('/exams/:id/analytics', requirePermissions('exam_result_view'), resultController.getExamAnalytics);
+router.post('/exams/:id/lock', requirePermissions('exam_lock'), examController.lockExam);
+router.post('/exams/:id/unlock', requirePermissions('exam_lock'), validate(examUnlockSchema), examController.unlockExam);
+router.get('/exam-subjects/:id/marksheet.pdf', requirePermissions('exam_view'), examSubjectController.downloadMarkSheetPdf);
+
+// --- Examinations: Reporting & Governance (Phase 2 / Tranche 2) ---
+// Report-card routes live under /students/:studentId/... (a student-scoped
+// resource, matching Student 360's own /students/:studentId/360/... precedent)
+// but are grouped here with the rest of Examinations since the underlying
+// logic (term-weighted aggregation, PDF rendering) is exam-domain, not
+// student-domain — reusing the existing exam_result_view permission.
+router.get('/students/:studentId/report-card', requirePermissions('exam_result_view'), reportCardController.getReportCard);
+router.get('/students/:studentId/report-card/pdf', requirePermissions('exam_result_view'), reportCardController.downloadReportCardPdf);
+
+// Correction-request/approval workflow — the sanctioned bypass for editing
+// marks on a LOCKED exam. Viewing/requesting reuse the broader exam_manage
+// alias; approving/rejecting is explicit-grant-only (exam_correction_approve),
+// matching the exam_lock/exam_result_publish/exam_marks_verify precedent.
+router.get('/exams/:examId/corrections', requirePermissions('exam_correction_view'), resultCorrectionController.listCorrections);
+router.post('/exams/:examId/corrections', requirePermissions('exam_correction_request'), validate(resultCorrectionRequestSchema), resultCorrectionController.requestCorrection);
+router.post('/corrections/:id/approve', requirePermissions('exam_correction_approve'), resultCorrectionController.approveCorrection);
+router.post('/corrections/:id/reject', requirePermissions('exam_correction_approve'), validate(resultCorrectionRejectSchema), resultCorrectionController.rejectCorrection);
 
 // --- Student 360 ---
 router.get('/students', requirePermissions('student_view'), studentController.getStudents);
@@ -391,6 +448,7 @@ router.get('/portal/admin/dashboard', requirePermissions('school_view'), portalA
 router.get('/portal/teacher/dashboard', requirePermissions('teacher_portal_view'), portalTeacherController.getTeacherDashboardData);
 router.get('/portal/teacher/today', requirePermissions('teacher_portal_view'), portalTeacherController.getTeacherTodayClasses);
 router.get('/portal/teacher/students', requirePermissions('teacher_portal_view'), portalTeacherController.getTeacherAssignedStudents);
+router.get('/portal/teacher/exams', requirePermissions('teacher_portal_view'), portalTeacherController.getMyExams);
 
 router.get('/portal/parent/children', requirePermissions('parent_portal_view'), portalParentController.getParentChildren);
 router.get('/portal/parent/dashboard', requirePermissions('parent_portal_view'), portalParentController.getParentDashboardData);

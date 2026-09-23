@@ -258,7 +258,7 @@ const deleteAcademicTerm = async (req, res, next) => {
     // Check dependencies
     const [hasAttendance, hasExams] = await Promise.all([
       AttendanceRecord.countDocuments({ schoolId, termId: id }).catch(() => 0),
-      ExamResult.countDocuments({ schoolId, termId: id }).catch(() => 0),
+      ExamResult.countDocuments({ schoolId, academicTermId: id }).catch(() => 0),
     ]);
 
     if (hasAttendance > 0 || hasExams > 0) {

@@ -18,6 +18,10 @@ const examResultSchema = new mongoose.Schema(
     remarks: { type: String, default: '' },
     status: { type: String, enum: ['PUBLISHED', 'DRAFT', 'ARCHIVED'], default: 'PUBLISHED' },
     publishedAt: { type: Date, default: Date.now },
+    // Phase 1 Examinations module linkage — optional so existing demo/legacy
+    // ExamResult rows (created before the Examinations module existed) remain valid.
+    examId: { type: mongoose.Schema.Types.ObjectId, ref: 'Exam' },
+    examSubjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'ExamSubject' },
   },
   { timestamps: true }
 );
@@ -26,5 +30,11 @@ examResultSchema.index({ schoolId: 1, studentId: 1, gradeId: 1 });
 examResultSchema.index({ schoolId: 1, gradeId: 1, sectionId: 1, subjectId: 1 });
 // Student 360: exams tab + performance trend chart query by student+year
 examResultSchema.index({ schoolId: 1, studentId: 1, academicYearId: 1 });
+// Partial unique index — the upsert key used by ResultService.publishResults.
+// Partial so it never conflicts with existing rows that predate examSubjectId.
+examResultSchema.index(
+  { schoolId: 1, examSubjectId: 1, studentId: 1 },
+  { unique: true, partialFilterExpression: { examSubjectId: { $exists: true } } }
+);
 
 module.exports = mongoose.model('ExamResult', examResultSchema);

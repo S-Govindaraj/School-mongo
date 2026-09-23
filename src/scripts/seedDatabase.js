@@ -71,6 +71,18 @@ const permissionsData = [
   { id: 'exam_result_view', module: 'Student Management', action: 'view', code: 'exam_result_view', name: 'View Exam Results', description: 'View student exam results in the Student 360 profile' },
   { id: 'discipline_view', module: 'Student Management', action: 'view', code: 'discipline_view', name: 'View Discipline Records', description: 'View student discipline incidents and disciplinary actions (sensitive — must be granted explicitly per role)' },
   { id: 'medical_view', module: 'Student Management', action: 'view', code: 'medical_view', name: 'View Medical Records', description: 'View student health profile and medical visit history (sensitive — must be granted explicitly per role)' },
+
+  // Examinations
+  { id: 'exam_view', module: 'Examinations', action: 'view', code: 'exam_view', name: 'View Exams', description: 'View exam definitions, schedules and exam subject configuration' },
+  { id: 'exam_manage', module: 'Examinations', action: 'manage', code: 'exam_manage', name: 'Manage Exams', description: 'Create, edit, schedule and delete exams and their subjects' },
+  { id: 'exam_marks_enter', module: 'Examinations', action: 'update', code: 'exam_marks_enter', name: 'Enter Marks', description: 'Enter and edit student marks in the marks-entry grid' },
+  { id: 'exam_marks_verify', module: 'Examinations', action: 'approve', code: 'exam_marks_verify', name: 'Verify Marks', description: 'Verify a subject\'s marks as complete and correct (sensitive — must be granted explicitly per role)' },
+  { id: 'exam_result_calculate', module: 'Examinations', action: 'update', code: 'exam_result_calculate', name: 'Calculate Results', description: 'Run the result-readiness calculation for an exam' },
+  { id: 'exam_result_publish', module: 'Examinations', action: 'approve', code: 'exam_result_publish', name: 'Publish Results', description: 'Publish exam results to students and parents (sensitive — must be granted explicitly per role)' },
+  { id: 'exam_lock', module: 'Examinations', action: 'manage', code: 'exam_lock', name: 'Lock / Unlock Exam', description: 'Lock or unlock a published exam to freeze or reopen its results (sensitive — must be granted explicitly per role)' },
+  { id: 'exam_correction_view', module: 'Examinations', action: 'view', code: 'exam_correction_view', name: 'View Result Corrections', description: 'View result correction requests and their status' },
+  { id: 'exam_correction_request', module: 'Examinations', action: 'update', code: 'exam_correction_request', name: 'Request Result Correction', description: 'Request a correction to a student\'s marks on a locked exam' },
+  { id: 'exam_correction_approve', module: 'Examinations', action: 'approve', code: 'exam_correction_approve', name: 'Approve Result Correction', description: 'Approve or reject a result correction request, applying it to the published result (sensitive — must be granted explicitly per role)' },
   { id: 'admission_view', module: 'Admissions & Enrollment', action: 'view', code: 'admission_view', name: 'View Admissions', description: 'View admission applications' },
   { id: 'admission_create', module: 'Admissions & Enrollment', action: 'create', code: 'admission_create', name: 'Submit Admissions', description: 'Create admission applications' },
   { id: 'admission_update', module: 'Admissions & Enrollment', action: 'update', code: 'admission_update', name: 'Update Admissions', description: 'Update application status and review notes' },
