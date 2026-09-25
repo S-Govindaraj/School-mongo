@@ -17,21 +17,29 @@ const withIds = (docs) => docs.map((d) => ({ ...d, id: String(d._id) }));
 class Student360Service {
   static async getOverview(schoolId, studentId) {
     const student = await requireStudent(schoolId, studentId);
+    const resolvedStudentId = student._id;
 
-    const [currentEnrollment, allEnrollments, examResults, pendingDocsCount] = await Promise.all([
-      repo.getCurrentEnrollment(schoolId, studentId),
-      repo.getAllEnrollments(schoolId, studentId),
-      repo.getExamResultsAllYears(schoolId, studentId),
-      repo.countPendingDocuments(schoolId, studentId),
+    const [currentEnrollment, allEnrollments, examResults, pendingDocsCount, guardians] = await Promise.all([
+      repo.getCurrentEnrollment(schoolId, resolvedStudentId),
+      repo.getAllEnrollments(schoolId, resolvedStudentId),
+      repo.getExamResultsAllYears(schoolId, resolvedStudentId),
+      repo.countPendingDocuments(schoolId, resolvedStudentId),
+      repo.getGuardians(schoolId, resolvedStudentId),
     ]);
 
-    const academicYearId = currentEnrollment?.academicYearId?._id;
+    const activeEnrollment = currentEnrollment || allEnrollments.find((e) => e.isCurrent) || allEnrollments[0] || null;
+    const academicYearId = activeEnrollment?.academicYearId?._id || activeEnrollment?.academicYearId;
 
     const [attendanceRecords, invoices, classTeacher] = await Promise.all([
-      academicYearId ? repo.getAttendanceRecords(schoolId, studentId, academicYearId) : Promise.resolve([]),
-      academicYearId ? repo.getInvoices(schoolId, studentId, academicYearId) : Promise.resolve([]),
-      currentEnrollment
-        ? repo.getClassTeacher(schoolId, academicYearId, currentEnrollment.gradeId?._id, currentEnrollment.sectionId?._id)
+      academicYearId ? repo.getAttendanceRecords(schoolId, resolvedStudentId, academicYearId) : Promise.resolve([]),
+      academicYearId ? repo.getInvoices(schoolId, resolvedStudentId, academicYearId) : Promise.resolve([]),
+      activeEnrollment
+        ? repo.getClassTeacher(
+            schoolId,
+            academicYearId,
+            activeEnrollment.gradeId?._id || activeEnrollment.gradeId,
+            activeEnrollment.sectionId?._id || activeEnrollment.sectionId
+          )
         : Promise.resolve(null),
     ]);
 
@@ -53,8 +61,9 @@ class Student360Service {
 
     return {
       student: withId(student),
-      currentEnrollment: withId(currentEnrollment),
+      currentEnrollment: withId(activeEnrollment),
       classTeacher,
+      guardians,
       kpis: {
         attendancePercentage,
         averagePercentage,
@@ -122,9 +131,13 @@ class Student360Service {
 
   static async getSubjectsAndTeachers(schoolId, studentId, academicYearId) {
     await requireStudent(schoolId, studentId);
-    const enrollment = academicYearId
+    let enrollment = academicYearId
       ? await repo.getEnrollmentForYear(schoolId, studentId, academicYearId)
       : await repo.getCurrentEnrollment(schoolId, studentId);
+    if (!enrollment && !academicYearId) {
+      const all = await repo.getAllEnrollments(schoolId, studentId);
+      enrollment = all.find((e) => e.isCurrent) || all[0] || null;
+    }
     if (!enrollment) {
       return { enrollment: null, subjects: [] };
     }
@@ -160,7 +173,17 @@ class Student360Service {
 
   static async getAttendance(schoolId, studentId, academicYearId) {
     await requireStudent(schoolId, studentId);
-    const targetAY = await repo.resolveAcademicYear(schoolId, academicYearId);
+    let targetAY = academicYearId;
+    if (!targetAY) {
+      const currentEnr = await repo.getCurrentEnrollment(schoolId, studentId);
+      targetAY = currentEnr?.academicYearId?._id || currentEnr?.academicYearId;
+    }
+    if (!targetAY) {
+      const all = await repo.getAllEnrollments(schoolId, studentId);
+      const enr = all.find((e) => e.isCurrent) || all[0] || null;
+      targetAY = enr?.academicYearId?._id || enr?.academicYearId;
+    }
+    targetAY = await repo.resolveAcademicYear(schoolId, targetAY);
     const records = await repo.getAttendanceRecords(schoolId, studentId, targetAY);
 
     let presentCount = 0;
@@ -238,9 +261,13 @@ class Student360Service {
 
   static async getTimetable(schoolId, studentId, academicYearId) {
     await requireStudent(schoolId, studentId);
-    const enrollment = academicYearId
+    let enrollment = academicYearId
       ? await repo.getEnrollmentForYear(schoolId, studentId, academicYearId)
       : await repo.getCurrentEnrollment(schoolId, studentId);
+    if (!enrollment && !academicYearId) {
+      const all = await repo.getAllEnrollments(schoolId, studentId);
+      enrollment = all.find((e) => e.isCurrent) || all[0] || null;
+    }
     if (!enrollment) {
       return { enrollment: null, entries: [] };
     }

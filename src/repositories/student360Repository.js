@@ -17,8 +17,33 @@ const StudentHealthProfile = require('../models/StudentHealthProfile');
 const MedicalVisit = require('../models/MedicalVisit');
 const DisciplineIncident = require('../models/DisciplineIncident');
 const DisciplinaryAction = require('../models/DisciplinaryAction');
+const Grade = require('../models/Grade');
+const Section = require('../models/Section');
+const Staff = require('../models/Staff');
+const AttendanceStatus = require('../models/AttendanceStatus');
+const Period = require('../models/Period');
+const Guardian = require('../models/Guardian');
+const Subject = require('../models/Subject');
+const AcademicTerm = require('../models/AcademicTerm');
+const Room = require('../models/Room');
+const TransportRoute = require('../models/TransportRoute');
+const RouteStop = require('../models/RouteStop');
+const Vehicle = require('../models/Vehicle');
+const User = require('../models/User');
 
-const findStudentInSchool = (schoolId, studentId) => Student.findOne({ _id: studentId, schoolId }).lean();
+const mongoose = require('mongoose');
+
+const findStudentInSchool = (schoolId, studentId) => {
+  if (!studentId) return Promise.resolve(null);
+  const isObjectId = mongoose.Types.ObjectId.isValid(studentId) && String(new mongoose.Types.ObjectId(studentId)) === String(studentId);
+  if (isObjectId) {
+    return Student.findOne({ _id: studentId, schoolId }).lean();
+  }
+  return Student.findOne({
+    schoolId,
+    $or: [{ studentNumber: studentId }, { admissionNumber: studentId }],
+  }).lean();
+};
 
 const resolveAcademicYear = async (schoolId, academicYearId) => {
   if (academicYearId) return academicYearId;
@@ -143,7 +168,7 @@ const countPendingDocuments = (schoolId, studentId) =>
   Document.countDocuments({ schoolId, ownerType: 'STUDENT', ownerId: studentId, status: 'PENDING_VERIFICATION' });
 
 const getTransportAssignment = (schoolId, studentId, academicYearId) => {
-  const query = { schoolId, studentId, status: 'ACTIVE' };
+  const query = { schoolId, studentId };
   if (academicYearId) query.academicYearId = academicYearId;
   return TransportAssignment.find(query)
     .populate('routeId', 'routeCode routeName direction')

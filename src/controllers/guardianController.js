@@ -33,10 +33,11 @@ const getGuardians = async (req, res, next) => {
       Guardian.find(query).sort({ createdAt: -1 }).skip(skip).limit(limitNum).lean(),
     ]);
 
-    // Attach linked students
+    // Attach linked students + their current Section/Class via Enrollment (gradeId/sectionId populated)
+    const Enrollment = require('../models/Enrollment');
     const guardianIds = guardians.map((g) => g._id);
     const links = await StudentGuardian.find({ schoolId, guardianId: { $in: guardianIds } })
-      .populate('studentId', 'firstName lastName studentNumber status')
+      .populate('studentId', 'firstName lastName studentNumber admissionNumber status')
       .lean();
 
     const linkMap = {};
@@ -44,6 +45,36 @@ const getGuardians = async (req, res, next) => {
       const gId = String(l.guardianId);
       if (!linkMap[gId]) linkMap[gId] = [];
       if (l.studentId) linkMap[gId].push(l.studentId);
+    });
+
+    // Resolve current enrollment per student for section/class
+    const studentIds = [...new Set(links.map((l) => String(l.studentId?._id || l.studentId)).filter(Boolean))];
+    const enrollmentMap = {};
+    if (studentIds.length > 0) {
+      const enrollments = await Enrollment.find({ schoolId, studentId: { $in: studentIds }, isCurrent: true })
+        .populate('gradeId', 'name code')
+        .populate('sectionId', 'name code')
+        .lean();
+      enrollments.forEach((e) => {
+        enrollmentMap[String(e.studentId)] = {
+          gradeId: e.gradeId?._id || e.gradeId || null,
+          grade: e.gradeId?.name || null,
+          sectionId: e.sectionId?._id || e.sectionId || null,
+          section: e.sectionId?.name || null,
+        };
+      });
+    }
+    Object.keys(linkMap).forEach((gId) => {
+      linkMap[gId] = linkMap[gId].map((s) => {
+        const enr = enrollmentMap[String(s._id || s.id || s)] || {};
+        return {
+          ...s,
+          gradeId: enr.gradeId ?? s.gradeId ?? null,
+          grade: enr.grade ?? s.grade ?? null,
+          sectionId: enr.sectionId ?? s.sectionId ?? null,
+          section: enr.section ?? s.section ?? null,
+        };
+      });
     });
 
     const formattedGuardians = guardians.map((g) => ({
