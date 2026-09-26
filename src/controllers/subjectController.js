@@ -9,13 +9,20 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getSubjects = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, type, search } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+    if (type && type !== 'ALL') {
+      filter.type = String(type).trim().toUpperCase();
+    }
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      filter.$or = [{ name: regex }, { code: regex }, { shortName: regex }];
     }
 
     const subjects = await Subject.find(filter).sort({ name: 1 }).lean();

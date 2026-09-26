@@ -7,7 +7,7 @@ const teacherAssignmentSchema = new mongoose.Schema(
     staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', required: true },
     gradeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Grade', required: true },
     sectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Section', required: true },
-    subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
+    subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: false, default: null },
     isClassTeacher: { type: Boolean, default: false },
     assignmentType: { type: String, enum: ['PRIMARY', 'ASSISTANT', 'CO_TEACHER'], default: 'PRIMARY' },
     startDate: { type: Date },

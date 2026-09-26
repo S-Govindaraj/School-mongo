@@ -95,6 +95,10 @@ const permissionsData = [
   { id: 'staff_view', module: 'People & Staff', action: 'view', code: 'staff_view', name: 'View Teachers & Staff', description: 'View staff directory and member profiles' },
   { id: 'staff_manage', module: 'People & Staff', action: 'manage', code: 'staff_manage', name: 'Manage Teachers & Staff', description: 'Register, edit and manage staff members' },
   { id: 'teacher_assignment_view', module: 'People & Staff', action: 'view', code: 'teacher_assignment_view', name: 'View Teacher Assignments', description: 'View teacher class and subject assignments' },
+  { id: 'teacher_assignment_create', module: 'People & Staff', action: 'create', code: 'teacher_assignment_create', name: 'Create Teacher Assignment', description: 'Assign teachers to classes, sections and subjects' },
+  { id: 'teacher_assignment_edit', module: 'People & Staff', action: 'edit', code: 'teacher_assignment_edit', name: 'Edit Teacher Assignment', description: 'Modify teacher assignments' },
+  { id: 'teacher_assignment_active', module: 'People & Staff', action: 'active', code: 'teacher_assignment_active', name: 'Activate Teacher Assignment', description: 'Activate teacher assignments' },
+  { id: 'teacher_assignment_inactive', module: 'People & Staff', action: 'inactive', code: 'teacher_assignment_inactive', name: 'Deactivate Teacher Assignment', description: 'Deactivate teacher assignments' },
   { id: 'teacher_assignment_manage', module: 'People & Staff', action: 'manage', code: 'teacher_assignment_manage', name: 'Manage Teacher Assignments', description: 'Assign teachers to classes, sections and subjects' },
 
   // Roles & Access Control
@@ -108,17 +112,44 @@ const permissionsData = [
   { id: 'campus_manage', module: 'School Setup', action: 'manage', code: 'campus_manage', name: 'Manage Campuses', description: 'Create, edit, delete school campuses' },
 
   // Academic Setup
+  { id: 'academic_config_view', module: 'Academic Setup', action: 'view', code: 'academic_config_view', name: 'View Academic Configuration', description: 'Access the full Academic Configuration workspace' },
   { id: 'academic_year_view', module: 'Academic Setup', action: 'view', code: 'academic_year_view', name: 'View Academic Years', description: 'View academic calendar years' },
+  { id: 'academic_year_create', module: 'Academic Setup', action: 'create', code: 'academic_year_create', name: 'Create Academic Year', description: 'Add new academic calendar years' },
+  { id: 'academic_year_edit', module: 'Academic Setup', action: 'edit', code: 'academic_year_edit', name: 'Edit Academic Year', description: 'Modify academic calendar years' },
+  { id: 'academic_year_inactive', module: 'Academic Setup', action: 'inactive', code: 'academic_year_inactive', name: 'Deactivate Academic Year', description: 'Deactivate academic calendar years' },
+  { id: 'academic_year_active', module: 'Academic Setup', action: 'active', code: 'academic_year_active', name: 'Activate Academic Year', description: 'Activate or set as current academic calendar year' },
   { id: 'academic_year_manage', module: 'Academic Setup', action: 'manage', code: 'academic_year_manage', name: 'Manage Academic Years', description: 'Create, edit, delete & set current academic year' },
+  
   { id: 'academic_term_view', module: 'Academic Setup', action: 'view', code: 'academic_term_view', name: 'View Academic Terms', description: 'View academic terms and semesters' },
+  { id: 'academic_term_create', module: 'Academic Setup', action: 'create', code: 'academic_term_create', name: 'Create Academic Term', description: 'Add new academic terms' },
+  { id: 'academic_term_edit', module: 'Academic Setup', action: 'edit', code: 'academic_term_edit', name: 'Edit Academic Term', description: 'Modify academic terms' },
+  { id: 'academic_term_inactive', module: 'Academic Setup', action: 'inactive', code: 'academic_term_inactive', name: 'Deactivate Academic Term', description: 'Deactivate academic terms' },
+  { id: 'academic_term_active', module: 'Academic Setup', action: 'active', code: 'academic_term_active', name: 'Activate Academic Term', description: 'Activate academic terms' },
   { id: 'academic_term_manage', module: 'Academic Setup', action: 'manage', code: 'academic_term_manage', name: 'Manage Academic Terms', description: 'Create, edit, delete academic terms' },
+  
   { id: 'grade_view', module: 'Academic Setup', action: 'view', code: 'grade_view', name: 'View Grades / Classes', description: 'View grade and class directory' },
+  { id: 'grade_create', module: 'Academic Setup', action: 'create', code: 'grade_create', name: 'Create Grade / Class', description: 'Add new grade and class levels' },
+  { id: 'grade_edit', module: 'Academic Setup', action: 'edit', code: 'grade_edit', name: 'Edit Grade / Class', description: 'Modify grade and class levels' },
+  { id: 'grade_inactive', module: 'Academic Setup', action: 'inactive', code: 'grade_inactive', name: 'Deactivate Grade / Class', description: 'Deactivate grade and class levels' },
+  { id: 'grade_active', module: 'Academic Setup', action: 'active', code: 'grade_active', name: 'Activate Grade / Class', description: 'Activate grade and class levels' },
   { id: 'grade_manage', module: 'Academic Setup', action: 'manage', code: 'grade_manage', name: 'Manage Grades / Classes', description: 'Create, edit, delete grades and classes' },
+  
   { id: 'section_view', module: 'Academic Setup', action: 'view', code: 'section_view', name: 'View Sections', description: 'View class sections' },
+  { id: 'section_create', module: 'Academic Setup', action: 'create', code: 'section_create', name: 'Create Section', description: 'Add new class sections' },
+  { id: 'section_edit', module: 'Academic Setup', action: 'edit', code: 'section_edit', name: 'Edit Section', description: 'Modify class sections' },
+  { id: 'section_inactive', module: 'Academic Setup', action: 'inactive', code: 'section_inactive', name: 'Deactivate Section', description: 'Deactivate class sections' },
+  { id: 'section_active', module: 'Academic Setup', action: 'active', code: 'section_active', name: 'Activate Section', description: 'Activate class sections' },
   { id: 'section_manage', module: 'Academic Setup', action: 'manage', code: 'section_manage', name: 'Manage Sections', description: 'Create, edit, delete class sections' },
+  
   { id: 'subject_view', module: 'Academic Setup', action: 'view', code: 'subject_view', name: 'View Master Subjects', description: 'View subject catalogue' },
+  { id: 'subject_create', module: 'Academic Setup', action: 'create', code: 'subject_create', name: 'Create Master Subject', description: 'Add new master subjects' },
+  { id: 'subject_edit', module: 'Academic Setup', action: 'edit', code: 'subject_edit', name: 'Edit Master Subject', description: 'Modify master subjects' },
+  { id: 'subject_inactive', module: 'Academic Setup', action: 'inactive', code: 'subject_inactive', name: 'Deactivate Master Subject', description: 'Deactivate master subjects' },
+  { id: 'subject_active', module: 'Academic Setup', action: 'active', code: 'subject_active', name: 'Activate Master Subject', description: 'Activate master subjects' },
   { id: 'subject_manage', module: 'Academic Setup', action: 'manage', code: 'subject_manage', name: 'Manage Master Subjects', description: 'Create, edit, delete master subjects' },
+  
   { id: 'class_subject_view', module: 'Academic Setup', action: 'view', code: 'class_subject_view', name: 'View Class Subject Mapping', description: 'View class subject configurations' },
+  { id: 'class_subject_edit', module: 'Academic Setup', action: 'edit', code: 'class_subject_edit', name: 'Edit Class Subjects', description: 'Configure and save class subjects' },
   { id: 'class_subject_manage', module: 'Academic Setup', action: 'manage', code: 'class_subject_manage', name: 'Configure Class Subjects', description: 'Configure subjects per class' },
 
   // System & Audit

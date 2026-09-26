@@ -1,6 +1,7 @@
 const Staff = require('../models/Staff');
 const User = require('../models/User');
 const Role = require('../models/Role');
+const Section = require('../models/Section');
 const TeacherAssignment = require('../models/TeacherAssignment');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
@@ -10,13 +11,30 @@ const bcrypt = require('bcryptjs');
 const getStaff = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, isTeachingStaff, department, search } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+    if (isTeachingStaff !== undefined && isTeachingStaff !== '' && isTeachingStaff !== 'ALL') {
+      filter.isTeachingStaff = isTeachingStaff === 'true';
+    }
+    if (department && department !== 'ALL') {
+      filter.department = department;
+    }
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      filter.$or = [
+        { firstName: regex },
+        { lastName: regex },
+        { employeeId: regex },
+        { designation: regex },
+        { email: regex },
+        { phone: regex },
+      ];
     }
 
     const staff = await Staff.find(filter)
@@ -190,6 +208,21 @@ const deleteStaff = async (req, res, next) => {
     const staff = await Staff.findOne({ _id: id, schoolId });
     if (!staff) {
       throw new NotFoundError('Staff member not found.');
+    }
+
+    // Check if staff member is currently assigned as Class Teacher for any active section
+    const activeSection = await Section.findOne({
+      schoolId,
+      classTeacherId: id,
+      status: { $ne: 'ARCHIVED' },
+    }).populate('gradeId', 'name');
+
+    if (activeSection) {
+      const gradeName = activeSection.gradeId?.name || 'Class';
+      const sectionName = activeSection.name || 'Section';
+      throw new ValidationError(
+        `Cannot deactivate "${staff.firstName} ${staff.lastName}" because they are currently assigned as Class Teacher for Section "${sectionName}" (${gradeName}). Please reassign or unassign the class teacher from that section first.`
+      );
     }
 
     staff.status = 'INACTIVE';

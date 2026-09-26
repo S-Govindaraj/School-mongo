@@ -22,11 +22,15 @@ const getStudents = async (req, res, next) => {
       academicYearId = '',
       page = 1,
       limit = 50,
+      sortBy = 'studentNumber',
+      sortOrder = 'asc',
     } = req.query;
 
+    const isAll = limit === 'all' || limit === '-1' || limit === '0' || parseInt(limit, 10) === 0;
     const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 50;
-    const skip = (pageNum - 1) * limitNum;
+    const parsedLimit = parseInt(limit, 10);
+    const limitNum = isAll ? 0 : (isNaN(parsedLimit) ? 50 : Math.max(1, parsedLimit));
+    const skip = isAll ? 0 : (pageNum - 1) * limitNum;
 
     // Build filter
     const query = { schoolId };
@@ -72,9 +76,24 @@ const getStudents = async (req, res, next) => {
     }
 
     // Phase 2: paginated student list + total count in parallel
+    const sortDir = String(sortOrder).toLowerCase() === 'desc' ? -1 : 1;
+    const sortField = sortBy || 'studentNumber';
+    const sortOption = { [sortField]: sortDir };
+    if (sortField !== '_id') {
+      sortOption._id = 1;
+    }
+
+    let studentFindQuery = Student.find(query).sort(sortOption);
+    if (!isAll && skip > 0) {
+      studentFindQuery = studentFindQuery.skip(skip);
+    }
+    if (!isAll && limitNum > 0) {
+      studentFindQuery = studentFindQuery.limit(limitNum);
+    }
+
     const [totalRecords, students] = await Promise.all([
       Student.countDocuments(query),
-      Student.find(query).sort({ createdAt: -1 }).skip(skip).limit(limitNum).lean(),
+      studentFindQuery.lean(),
     ]);
 
     // Phase 3: fetch enrollments only for the current page of students (not all students school-wide)
@@ -99,8 +118,12 @@ const getStudents = async (req, res, next) => {
         currentEnrollment: placement
           ? {
               academicYear: placement.academicYearId?.name,
+              academicYearId: placement.academicYearId?._id || placement.academicYearId,
               grade: placement.gradeId?.name,
+              gradeId: placement.gradeId?._id || placement.gradeId,
               section: placement.sectionId?.name,
+              sectionId: placement.sectionId?._id || placement.sectionId,
+              rollNumber: placement.rollNumber || stu.rollNumber || '',
             }
           : null,
       };
@@ -118,9 +141,9 @@ const getStudents = async (req, res, next) => {
       data: formattedStudents,
       pagination: {
         page: pageNum,
-        limit: limitNum,
+        limit: limitNum || totalRecords,
         totalRecords,
-        totalPages: Math.ceil(totalRecords / limitNum) || 1,
+        totalPages: limitNum > 0 ? (Math.ceil(totalRecords / limitNum) || 1) : 1,
       },
       kpis,
     });

@@ -131,53 +131,53 @@ router.delete('/campuses/:id', requirePermissions('campus_manage'), schoolContro
 // --- Academic Years ---
 router.get('/academic-years', requirePermissions('academic_year_view'), academicYearController.getAcademicYears);
 router.get('/academic-years/current', requirePermissions('academic_year_view'), academicYearController.getCurrentAcademicYear);
-router.post('/academic-years', requirePermissions('academic_year_manage'), validate(academicYearSchema), academicYearController.createAcademicYear);
-router.patch('/academic-years/:id', requirePermissions('academic_year_manage'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
-router.put('/academic-years/:id', requirePermissions('academic_year_manage'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
-router.post('/academic-years/:id/set-current', requirePermissions('academic_year_manage'), academicYearController.setCurrentAcademicYear);
-router.post('/academic-years/:id/restore', requirePermissions('academic_year_manage'), academicYearController.restoreAcademicYear);
-router.delete('/academic-years/:id', requirePermissions('academic_year_manage'), academicYearController.deleteAcademicYear);
+router.post('/academic-years', requirePermissions('academic_year_create'), validate(academicYearSchema), academicYearController.createAcademicYear);
+router.patch('/academic-years/:id', requirePermissions('academic_year_edit'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
+router.put('/academic-years/:id', requirePermissions('academic_year_edit'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
+router.post('/academic-years/:id/set-current', requirePermissions('academic_year_active'), academicYearController.setCurrentAcademicYear);
+router.post('/academic-years/:id/restore', requirePermissions('academic_year_active'), academicYearController.restoreAcademicYear);
+router.delete('/academic-years/:id', requirePermissions('academic_year_inactive'), academicYearController.deleteAcademicYear);
 
 // --- Academic Terms ---
 router.get('/academic-terms', requirePermissions('academic_term_view'), academicTermController.getAcademicTerms);
-router.post('/academic-terms', requirePermissions('academic_term_manage'), validate(academicTermSchema), academicTermController.createAcademicTerm);
-router.patch('/academic-terms/:id', requirePermissions('academic_term_manage'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
-router.put('/academic-terms/:id', requirePermissions('academic_term_manage'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
-router.post('/academic-terms/:id/restore', requirePermissions('academic_term_manage'), academicTermController.restoreAcademicTerm);
-router.delete('/academic-terms/:id', requirePermissions('academic_term_manage'), academicTermController.deleteAcademicTerm);
+router.post('/academic-terms', requirePermissions('academic_term_create'), validate(academicTermSchema), academicTermController.createAcademicTerm);
+router.patch('/academic-terms/:id', requirePermissions('academic_term_edit'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
+router.put('/academic-terms/:id', requirePermissions('academic_term_edit'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
+router.post('/academic-terms/:id/restore', requirePermissions('academic_term_active'), academicTermController.restoreAcademicTerm);
+router.delete('/academic-terms/:id', requirePermissions('academic_term_inactive'), academicTermController.deleteAcademicTerm);
 
 // --- Grades / Classes ---
 router.get('/grades', requirePermissions('grade_view'), gradeController.getGrades);
-router.post('/grades', requirePermissions('grade_manage'), validate(gradeSchema), gradeController.createGrade);
-router.patch('/grades/:id', requirePermissions('grade_manage'), validate(updateGradeSchema), gradeController.updateGrade);
-router.put('/grades/:id', requirePermissions('grade_manage'), validate(updateGradeSchema), gradeController.updateGrade);
-router.post('/grades/:id/restore', requirePermissions('grade_manage'), gradeController.restoreGrade);
-router.delete('/grades/:id', requirePermissions('grade_manage'), gradeController.deleteGrade);
+router.post('/grades', requirePermissions('grade_create'), validate(gradeSchema), gradeController.createGrade);
+router.patch('/grades/:id', requirePermissions('grade_edit'), validate(updateGradeSchema), gradeController.updateGrade);
+router.put('/grades/:id', requirePermissions('grade_edit'), validate(updateGradeSchema), gradeController.updateGrade);
+router.post('/grades/:id/restore', requirePermissions('grade_active'), gradeController.restoreGrade);
+router.delete('/grades/:id', requirePermissions('grade_inactive'), gradeController.deleteGrade);
 
 // --- Sections ---
 router.get('/sections', requirePermissions('section_view'), sectionController.getSections);
-router.post('/sections', requirePermissions('section_manage'), validate(sectionSchema), sectionController.createSection);
-router.patch('/sections/:id', requirePermissions('section_manage'), validate(updateSectionSchema), sectionController.updateSection);
-router.put('/sections/:id', requirePermissions('section_manage'), validate(updateSectionSchema), sectionController.updateSection);
-router.post('/sections/:id/restore', requirePermissions('section_manage'), sectionController.restoreSection);
-router.delete('/sections/:id', requirePermissions('section_manage'), sectionController.deleteSection);
+router.post('/sections', requirePermissions('section_create'), validate(sectionSchema), sectionController.createSection);
+router.patch('/sections/:id', requirePermissions('section_edit'), validate(updateSectionSchema), sectionController.updateSection);
+router.put('/sections/:id', requirePermissions('section_edit'), validate(updateSectionSchema), sectionController.updateSection);
+router.post('/sections/:id/restore', requirePermissions('section_active'), sectionController.restoreSection);
+router.delete('/sections/:id', requirePermissions('section_inactive'), sectionController.deleteSection);
 
 // --- Master Subjects ---
 router.get('/subjects', requirePermissions('subject_view'), subjectController.getSubjects);
-router.post('/subjects', requirePermissions('subject_manage'), validate(subjectSchema), subjectController.createSubject);
-router.patch('/subjects/:id', requirePermissions('subject_manage'), validate(updateSubjectSchema), subjectController.updateSubject);
-router.put('/subjects/:id', requirePermissions('subject_manage'), validate(updateSubjectSchema), subjectController.updateSubject);
-router.post('/subjects/:id/restore', requirePermissions('subject_manage'), subjectController.restoreSubject);
-router.delete('/subjects/:id', requirePermissions('subject_manage'), subjectController.deleteSubject);
+router.post('/subjects', requirePermissions('subject_create'), validate(subjectSchema), subjectController.createSubject);
+router.patch('/subjects/:id', requirePermissions('subject_edit'), validate(updateSubjectSchema), subjectController.updateSubject);
+router.put('/subjects/:id', requirePermissions('subject_edit'), validate(updateSubjectSchema), subjectController.updateSubject);
+router.post('/subjects/:id/restore', requirePermissions('subject_active'), subjectController.restoreSubject);
+router.delete('/subjects/:id', requirePermissions('subject_inactive'), subjectController.deleteSubject);
 
 // --- Class Subjects ---
 router.get('/class-subjects', requirePermissions('class_subject_view'), classSubjectController.getClassSubjects);
-router.post('/class-subjects', requirePermissions('class_subject_manage'), validate(classSubjectSchema), classSubjectController.createClassSubject);
-router.post('/class-subjects/bulk', requirePermissions('class_subject_manage'), validate(bulkClassSubjectSchema), classSubjectController.createBulkClassSubjects);
-router.patch('/class-subjects/:id', requirePermissions('class_subject_manage'), validate(updateClassSubjectSchema), classSubjectController.updateClassSubject);
-router.put('/class-subjects/:id', requirePermissions('class_subject_manage'), validate(updateClassSubjectSchema), classSubjectController.updateClassSubject);
-router.post('/class-subjects/:id/restore', requirePermissions('class_subject_manage'), classSubjectController.restoreClassSubject);
-router.delete('/class-subjects/:id', requirePermissions('class_subject_manage'), classSubjectController.deleteClassSubject);
+router.post('/class-subjects', requirePermissions('class_subject_edit'), validate(classSubjectSchema), classSubjectController.createClassSubject);
+router.post('/class-subjects/bulk', requirePermissions('class_subject_edit'), validate(bulkClassSubjectSchema), classSubjectController.createBulkClassSubjects);
+router.patch('/class-subjects/:id', requirePermissions('class_subject_edit'), validate(updateClassSubjectSchema), classSubjectController.updateClassSubject);
+router.put('/class-subjects/:id', requirePermissions('class_subject_edit'), validate(updateClassSubjectSchema), classSubjectController.updateClassSubject);
+router.post('/class-subjects/:id/restore', requirePermissions('class_subject_edit'), classSubjectController.restoreClassSubject);
+router.delete('/class-subjects/:id', requirePermissions('class_subject_edit'), classSubjectController.deleteClassSubject);
 
 // --- Staff & Teachers ---
 router.get('/staff', requirePermissions('staff_view'), staffController.getStaff);
@@ -190,11 +190,11 @@ router.delete('/staff/:id', requirePermissions('staff_manage'), staffController.
 
 // --- Teacher Assignments ---
 router.get('/teacher-assignments', requirePermissions('teacher_assignment_view'), teacherAssignmentController.getTeacherAssignments);
-router.post('/teacher-assignments', requirePermissions('teacher_assignment_manage'), validate(teacherAssignmentSchema), teacherAssignmentController.createTeacherAssignment);
-router.patch('/teacher-assignments/:id', requirePermissions('teacher_assignment_manage'), validate(updateTeacherAssignmentSchema), teacherAssignmentController.updateTeacherAssignment);
-router.put('/teacher-assignments/:id', requirePermissions('teacher_assignment_manage'), validate(updateTeacherAssignmentSchema), teacherAssignmentController.updateTeacherAssignment);
-router.post('/teacher-assignments/:id/restore', requirePermissions('teacher_assignment_manage'), teacherAssignmentController.restoreTeacherAssignment);
-router.delete('/teacher-assignments/:id', requirePermissions('teacher_assignment_manage'), teacherAssignmentController.deleteTeacherAssignment);
+router.post('/teacher-assignments', requirePermissions('teacher_assignment_create'), validate(teacherAssignmentSchema), teacherAssignmentController.createTeacherAssignment);
+router.patch('/teacher-assignments/:id', requirePermissions('teacher_assignment_edit'), validate(updateTeacherAssignmentSchema), teacherAssignmentController.updateTeacherAssignment);
+router.put('/teacher-assignments/:id', requirePermissions('teacher_assignment_edit'), validate(updateTeacherAssignmentSchema), teacherAssignmentController.updateTeacherAssignment);
+router.post('/teacher-assignments/:id/restore', requirePermissions('teacher_assignment_active'), teacherAssignmentController.restoreTeacherAssignment);
+router.delete('/teacher-assignments/:id', requirePermissions('teacher_assignment_inactive'), teacherAssignmentController.deleteTeacherAssignment);
 
 // --- Examinations ---
 router.get('/exams', requirePermissions('exam_view'), examController.getExams);
@@ -318,6 +318,7 @@ router.get('/timetables', requirePermissions('timetable_view'), timetableControl
 router.get('/timetables/section/:sectionId', requirePermissions('timetable_view'), timetableController.getSectionTimetable);
 router.get('/timetables/teacher/:teacherId', requirePermissions('timetable_view'), timetableController.getTeacherTimetable);
 router.post('/timetables', requirePermissions('timetable_manage'), validate(timetableSchema), timetableController.createTimetableEntry);
+router.delete('/timetables/all', requirePermissions('timetable_manage'), timetableController.deleteAllTimetables);
 router.patch('/timetables/:id', requirePermissions('timetable_manage'), validate(updateTimetableSchema), timetableController.updateTimetableEntry);
 router.put('/timetables/:id', requirePermissions('timetable_manage'), validate(updateTimetableSchema), timetableController.updateTimetableEntry);
 router.delete('/timetables/:id', requirePermissions('timetable_manage'), timetableController.deleteTimetableEntry);

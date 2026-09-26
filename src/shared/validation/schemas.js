@@ -50,13 +50,18 @@ const validateAcademicYearYears = (val) => {
   return end === start + 1;
 };
 
+const getAcademicYearFormatMessage = () => {
+  const cy = new Date().getFullYear();
+  return `Enter a valid academic year such as ${cy} - ${cy + 1}.`;
+};
+
 const baseAcademicYearSchema = z.object({
   name: z
     .string()
     .min(1, 'Academic year name is required')
     .transform(normalizeAcademicYearString)
     .refine((v) => /^\d{4}-\d{4}$/.test(v), {
-      message: 'Enter a valid academic year such as 2026 - 2027.',
+      message: getAcademicYearFormatMessage(),
     })
     .refine(validateAcademicYearYears, {
       message: 'The ending year must be exactly one year after the starting year.',
@@ -66,7 +71,7 @@ const baseAcademicYearSchema = z.object({
     .min(1, 'Academic year code is required')
     .transform(normalizeAcademicYearString)
     .refine((v) => /^\d{4}-\d{4}$/.test(v), {
-      message: 'Enter a valid academic year such as 2026 - 2027.',
+      message: getAcademicYearFormatMessage(),
     })
     .refine(validateAcademicYearYears, {
       message: 'The ending year must be exactly one year after the starting year.',
@@ -94,7 +99,7 @@ const updateAcademicYearSchema = z.object({
     .min(1, 'Academic year name is required')
     .transform(normalizeAcademicYearString)
     .refine((v) => /^\d{4}-\d{4}$/.test(v), {
-      message: 'Enter a valid academic year such as 2026 - 2027.',
+      message: getAcademicYearFormatMessage(),
     })
     .refine(validateAcademicYearYears, {
       message: 'The ending year must be exactly one year after the starting year.',
@@ -105,7 +110,7 @@ const updateAcademicYearSchema = z.object({
     .min(1, 'Academic year code is required')
     .transform(normalizeAcademicYearString)
     .refine((v) => /^\d{4}-\d{4}$/.test(v), {
-      message: 'Enter a valid academic year such as 2026 - 2027.',
+      message: getAcademicYearFormatMessage(),
     })
     .refine(validateAcademicYearYears, {
       message: 'The ending year must be exactly one year after the starting year.',
@@ -136,7 +141,7 @@ const gradeSchema = z.object({
   code: z.string().trim().toUpperCase().min(1, 'Grade code is required').max(50, 'Grade code cannot exceed 50 characters'),
   displayName: z.string().trim().optional(),
   category: z.string().trim().default('Primary'),
-  sequenceOrder: z.number().int('Display order must be an integer').min(1, 'Display order must be a positive integer').default(1),
+  sequenceOrder: z.number().int('Display order must be an integer').min(0, 'Display order must be a non-negative integer').default(1),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
 });
 
@@ -149,6 +154,7 @@ const sectionSchema = z.object({
   capacity: z.number().int('Capacity must be an integer').min(1, 'Capacity must be greater than 0').default(40),
   room: z.string().trim().default(''),
   roomId: z.string().optional().or(z.literal('')),
+  classTeacherId: z.string().optional().nullable().or(z.literal('')),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
 });
 
@@ -229,7 +235,7 @@ const baseTeacherAssignmentObject = z.object({
   academicYearId: z.string().min(1, 'Academic year ID is required'),
   gradeId: z.string().min(1, 'Grade ID is required'),
   sectionId: z.string().min(1, 'Section ID is required'),
-  subjectId: z.string().min(1, 'Subject ID is required'),
+  subjectId: z.string().optional().nullable(),
   staffId: z.string().min(1, 'Staff member ID is required').optional(),
   teacherId: z.string().min(1, 'Staff member ID is required').optional(),
   isClassTeacher: z.boolean().default(false),

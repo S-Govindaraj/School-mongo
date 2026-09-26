@@ -6,7 +6,7 @@ const gradeSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, maxlength: 100 },
     code: { type: String, required: true, trim: true, uppercase: true, maxlength: 50 },
     category: { type: String, default: 'Primary', trim: true },
-    sequenceOrder: { type: Number, required: true, min: 1, default: 1 },
+    sequenceOrder: { type: Number, required: true, min: 0, default: 1 },
     status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'INACTIVE' },
   },
   { timestamps: true }

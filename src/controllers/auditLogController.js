@@ -7,8 +7,13 @@ const getAuditLogs = async (req, res, next) => {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 50;
     const search = (req.query.search || '').trim();
+    const action = (req.query.action || '').trim();
+    const entity = (req.query.entity || '').trim();
 
     const query = { schoolId };
+    if (action && action !== 'ALL') query.action = action;
+    if (entity && entity !== 'ALL') query.entity = entity;
+
     if (search) {
       query.$or = [
         { action: { $regex: search, $options: 'i' } },

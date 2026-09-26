@@ -15,13 +15,14 @@ const { withTransactionOrFallback } = require('../utils/withTransaction');
 
 // Helper to normalize input like "2026 - 2027" or "2026-2027" to "2026-2027"
 const parseAndNormalizeYear = (rawYear) => {
+  const cy = new Date().getFullYear();
   if (!rawYear || typeof rawYear !== 'string') {
-    throw new ValidationError('Enter a valid academic year such as 2026 - 2027.');
+    throw new ValidationError(`Enter a valid academic year such as ${cy} - ${cy + 1}.`);
   }
   const trimmed = rawYear.trim();
   const match = trimmed.match(/^(\d{4})\s*-\s*(\d{4})$/);
   if (!match) {
-    throw new ValidationError('Enter a valid academic year such as 2026 - 2027.');
+    throw new ValidationError(`Enter a valid academic year such as ${cy} - ${cy + 1}.`);
   }
   const start = parseInt(match[1], 10);
   const end = parseInt(match[2], 10);

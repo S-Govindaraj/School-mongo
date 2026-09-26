@@ -6,6 +6,7 @@ const Student = require('../models/Student');
 const Announcement = require('../models/Announcement');
 const Notification = require('../models/Notification');
 const Staff = require('../models/Staff');
+const Section = require('../models/Section');
 const Exam = require('../models/Exam');
 const ExamSubject = require('../models/ExamSubject');
 const { successResponse, errorResponse } = require('../utils/response');
@@ -96,6 +97,32 @@ const getTeacherDashboardData = async (req, res, next) => {
         })
       );
 
+      // Homeroom / Class Teacher sections directly from Section model
+      const classTeacherSections = await Section.find({
+        schoolId,
+        classTeacherId: teacherId,
+        status: { $ne: 'ARCHIVED' },
+      }).populate('gradeId', 'name code').lean();
+
+      for (const cts of classTeacherSections) {
+        const studentCount = await Enrollment.countDocuments({
+          schoolId,
+          gradeId: cts.gradeId?._id,
+          sectionId: cts._id,
+          isCurrent: true,
+        });
+        assignedClasses.unshift({
+          _id: `ct-${cts._id}`,
+          gradeName: cts.gradeId?.name || 'Grade',
+          sectionName: cts.name || 'Section',
+          subjectName: 'Class Teacher (Homeroom)',
+          studentCount,
+          gradeId: cts.gradeId?._id,
+          sectionId: cts._id,
+          isClassTeacher: true,
+        });
+      }
+
       // 2. Query real timetable entries for this teacher
       rawTodayClasses = await Timetable.find({
         schoolId,
@@ -155,14 +182,14 @@ const getTeacherDashboardData = async (req, res, next) => {
     // 3. Real attendance sessions count
     const completedSessions = teacherId
       ? await AttendanceSession.find({
-          schoolId,
-          teacherId,
-          status: { $in: ['SUBMITTED', 'LOCKED'] },
-          date: {
-            $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-            $lt: new Date(new Date().setHours(23, 59, 59, 999)),
-          },
-        }).distinct('sectionId')
+        schoolId,
+        teacherId,
+        status: { $in: ['SUBMITTED', 'LOCKED'] },
+        date: {
+          $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+          $lt: new Date(new Date().setHours(23, 59, 59, 999)),
+        },
+      }).distinct('sectionId')
       : [];
 
     const pendingAttendance = Math.max(0, todayClasses.length - completedSessions.length);
@@ -316,6 +343,29 @@ const getTeacherAssignedClasses = async (req, res, next) => {
       })
     );
 
+    const classTeacherSections = await Section.find({
+      schoolId,
+      classTeacherId: staff._id,
+      status: { $ne: 'ARCHIVED' },
+    }).populate('gradeId', 'name code').lean();
+
+    for (const cts of classTeacherSections) {
+      const studentCount = await Enrollment.countDocuments({
+        schoolId,
+        gradeId: cts.gradeId?._id,
+        sectionId: cts._id,
+        isCurrent: true,
+      });
+      result.unshift({
+        _id: `ct-${cts._id}`,
+        gradeId: cts.gradeId,
+        sectionId: { _id: cts._id, name: cts.name, code: cts.code },
+        subjectId: { name: 'Homeroom / Class Teacher', code: 'HR' },
+        isClassTeacher: true,
+        studentCount,
+      });
+    }
+
     return successResponse(res, result, 'Assigned classes retrieved successfully');
   } catch (error) {
     next(error);
@@ -349,21 +399,27 @@ const getTeacherAssignedStudents = async (req, res, next) => {
       status: 'ACTIVE',
     });
 
-    const classQueries = assignments.map((a) => ({
-      gradeId: a.gradeId,
-      sectionId: a.sectionId,
-    }));
+    const classTeacherSections = await Section.find({
+      schoolId,
+      classTeacherId: staff._id,
+      status: { $ne: 'ARCHIVED' },
+    }).select('gradeId _id').lean();
+
+    const classQueries = [
+      ...assignments.map((a) => ({ gradeId: a.gradeId, sectionId: a.sectionId })),
+      ...classTeacherSections.map((s) => ({ gradeId: s.gradeId, sectionId: s._id })),
+    ];
 
     const enrollments = classQueries.length > 0
       ? await Enrollment.find({
-          schoolId,
-          $or: classQueries,
-          isCurrent: true,
-        })
-          .populate('studentId')
-          .populate('gradeId', 'name code')
-          .populate('sectionId', 'name code')
-          .lean()
+        schoolId,
+        $or: classQueries,
+        isCurrent: true,
+      })
+        .populate('studentId')
+        .populate('gradeId', 'name code')
+        .populate('sectionId', 'name code')
+        .lean()
       : [];
 
     return successResponse(res, enrollments, 'Assigned students retrieved successfully');
@@ -407,11 +463,11 @@ const getMyExams = async (req, res, next) => {
     const pendingMarksQuery = await findPendingMarksExamSubjectQuery(schoolId, assignments);
     const examSubjects = pendingMarksQuery
       ? await ExamSubject.find(pendingMarksQuery)
-          .populate('examId', 'title status')
-          .populate('subjectId', 'name')
-          .populate('gradeId', 'name')
-          .sort({ examDate: 1 })
-          .lean()
+        .populate('examId', 'title status')
+        .populate('subjectId', 'name')
+        .populate('gradeId', 'name')
+        .sort({ examDate: 1 })
+        .lean()
       : [];
 
     return successResponse(res, examSubjects, 'My examinations retrieved successfully');

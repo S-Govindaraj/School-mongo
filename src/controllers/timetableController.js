@@ -325,6 +325,22 @@ const swapTimetableEntries = async (req, res, next) => {
   }
 };
 
+const TimetableGeneratorDraft = require('../models/TimetableGeneratorDraft');
+
+const deleteAllTimetables = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const t = await Timetable.deleteMany({ schoolId });
+    const d = await TimetableGeneratorDraft.deleteMany({ schoolId });
+    return successResponse(res, {
+      timetablesDeleted: t.deletedCount,
+      draftsDeleted: d.deletedCount,
+    }, `Deleted ${t.deletedCount} timetable entries and ${d.deletedCount} generator drafts.`);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getTimetables,
   getSectionTimetable,
@@ -338,4 +354,5 @@ module.exports = {
   publishTimetables,
   bulkUpdateTimetables,
   swapTimetableEntries,
+  deleteAllTimetables,
 };

@@ -95,11 +95,21 @@ const getGuardians = async (schoolId, studentId) => {
 };
 
 const getClassTeacher = async (schoolId, academicYearId, gradeId, sectionId) => {
-  if (!academicYearId || !gradeId || !sectionId) return null;
-  const assignment = await TeacherAssignment.findOne({
-    schoolId, academicYearId, gradeId, sectionId, isClassTeacher: true, status: 'ACTIVE',
-  }).populate('staffId', 'firstName lastName employeeId').lean();
-  return assignment?.staffId || null;
+  if (!sectionId) return null;
+  // 1. Direct Section.classTeacherId lookup (Single Source of Truth)
+  const section = await Section.findOne({ _id: sectionId, schoolId })
+    .populate('classTeacherId', 'firstName lastName employeeId email phone qualification designation')
+    .lean();
+  if (section?.classTeacherId) return section.classTeacherId;
+
+  // 2. Legacy fallback to TeacherAssignment
+  if (academicYearId && gradeId) {
+    const assignment = await TeacherAssignment.findOne({
+      schoolId, academicYearId, gradeId, sectionId, isClassTeacher: true, status: 'ACTIVE',
+    }).populate('staffId', 'firstName lastName employeeId email phone qualification designation').lean();
+    return assignment?.staffId || null;
+  }
+  return null;
 };
 
 const getAttendanceRecords = (schoolId, studentId, academicYearId) =>

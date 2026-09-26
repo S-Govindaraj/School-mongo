@@ -8,11 +8,16 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getLeaveRequests = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { studentId, status, page = 1, limit = 50 } = req.query;
+    const { studentId, status, startDate, endDate, page = 1, limit = 50 } = req.query;
 
     const query = { schoolId, status: { $ne: 'ARCHIVED' } };
     if (studentId) query.studentId = studentId;
-    if (status) query.status = status;
+    if (status && status !== 'ALL') query.status = status;
+    if (startDate || endDate) {
+      query.startDate = {};
+      if (startDate) query.startDate.$gte = new Date(startDate);
+      if (endDate) query.startDate.$lte = new Date(endDate);
+    }
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 50;

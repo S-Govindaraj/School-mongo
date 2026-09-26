@@ -26,15 +26,22 @@ const validateTeacherAssignment = async (schoolId, data, currentId = null) => {
   const staffId = bodyStaffId || teacherId;
   if (!staffId) throw new ValidationError('Staff member ID is required.');
 
-  // Phase 1: all independent entity lookups in parallel (6 queries → 1 round-trip)
-  const [year, staff, grade, section, subject, classSubject] = await Promise.all([
+  // Phase 1: entity lookups in parallel
+  const lookups = [
     AcademicYear.findOne({ _id: academicYearId, schoolId }),
     Staff.findOne({ _id: staffId, schoolId }),
     Grade.findOne({ _id: gradeId, schoolId }),
     Section.findOne({ _id: sectionId, schoolId }),
-    Subject.findOne({ _id: subjectId, schoolId }),
-    ClassSubject.findOne({ schoolId, academicYearId, gradeId, subjectId, status: { $ne: 'ARCHIVED' } }),
-  ]);
+  ];
+
+  if (subjectId) {
+    lookups.push(
+      Subject.findOne({ _id: subjectId, schoolId }),
+      ClassSubject.findOne({ schoolId, academicYearId, gradeId, subjectId, status: { $ne: 'ARCHIVED' } })
+    );
+  }
+
+  const [year, staff, grade, section, subject, classSubject] = await Promise.all(lookups);
 
   if (!year)    throw new ValidationError('Selected academic year does not exist in this school.');
   if (!staff)   throw new ValidationError('Assigned teacher/staff member does not exist in this school.');
@@ -44,8 +51,11 @@ const validateTeacherAssignment = async (schoolId, data, currentId = null) => {
   if (!section) throw new ValidationError('Selected section does not exist in this school.');
   if (String(section.gradeId) !== String(gradeId))
                 throw new ValidationError('Selected section does not belong to the selected grade.');
-  if (!subject) throw new ValidationError('Selected subject does not exist in this school.');
-  if (!classSubject) throw new ValidationError('This subject is not configured for the selected class.');
+
+  if (subjectId) {
+    if (!subject) throw new ValidationError('Selected subject does not exist in this school.');
+    if (!classSubject) throw new ValidationError('This subject is not configured for the selected class.');
+  }
 
   // Date validation (pure JS — no DB call needed)
   if (startDate && endDate) {
@@ -57,11 +67,19 @@ const validateTeacherAssignment = async (schoolId, data, currentId = null) => {
     }
   }
 
-  // Phase 2: duplicate + primary conflict checks in parallel (2 queries → 1 round-trip)
-  const duplicateQuery = { schoolId, academicYearId, gradeId, sectionId, subjectId, staffId, status: { $ne: 'ARCHIVED' } };
+  // Phase 2: duplicate + primary conflict checks in parallel
+  const duplicateQuery = {
+    schoolId,
+    academicYearId,
+    gradeId,
+    sectionId,
+    subjectId: subjectId || null,
+    staffId,
+    status: { $ne: 'ARCHIVED' },
+  };
   if (currentId) duplicateQuery._id = { $ne: currentId };
 
-  const primaryQuery = assignmentType === 'PRIMARY'
+  const primaryQuery = (assignmentType === 'PRIMARY' && subjectId)
     ? { schoolId, academicYearId, gradeId, sectionId, subjectId, assignmentType: 'PRIMARY', status: { $ne: 'ARCHIVED' } }
     : null;
   if (primaryQuery && currentId) primaryQuery._id = { $ne: currentId };
@@ -71,14 +89,14 @@ const validateTeacherAssignment = async (schoolId, data, currentId = null) => {
     primaryQuery ? TeacherAssignment.findOne(primaryQuery) : Promise.resolve(null),
   ]);
 
-  if (existing) throw new ValidationError('This teacher is already assigned to this subject and section for the selected academic year.');
+  if (existing) throw new ValidationError(subjectId ? 'This teacher is already assigned to this subject and section for the selected academic year.' : 'This teacher is already assigned to this section for the selected academic year.');
   if (existingPrimary) throw new ValidationError('A primary teacher is already assigned to this class subject. Please assign as Assistant or Co-teacher.');
 };
 
 const getTeacherAssignments = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, gradeId, sectionId, staffId, status, includeArchived } = req.query;
+    const { academicYearId, gradeId, sectionId, staffId, teacherId, search, status, includeArchived } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
@@ -89,7 +107,27 @@ const getTeacherAssignments = async (req, res, next) => {
     if (academicYearId) filter.academicYearId = academicYearId;
     if (gradeId) filter.gradeId = gradeId;
     if (sectionId) filter.sectionId = sectionId;
-    if (staffId) filter.staffId = staffId;
+
+    // Filter by Assigned Faculty Teacher (supports both staffId and teacherId query params)
+    const targetStaffId = staffId || teacherId;
+    if (targetStaffId) filter.staffId = targetStaffId;
+
+    // Search by teacher name or employee ID
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      const staffQuery = {
+        schoolId,
+        $or: [
+          { firstName: regex },
+          { lastName: regex },
+          { employeeId: regex },
+        ],
+      };
+      if (targetStaffId) staffQuery._id = targetStaffId;
+      const matchingStaff = await Staff.find(staffQuery).select('_id').lean();
+      const staffIds = matchingStaff.map((s) => s._id);
+      filter.staffId = { $in: staffIds };
+    }
 
     const list = await TeacherAssignment.find(filter)
       .populate('staffId', 'firstName lastName employeeId designation email phone')
@@ -133,6 +171,7 @@ const createTeacherAssignment = async (req, res, next) => {
         { schoolId, academicYearId, sectionId, isClassTeacher: true },
         { isClassTeacher: false }
       );
+      await Section.updateOne({ _id: sectionId, schoolId }, { $set: { classTeacherId: staffId } });
     }
 
     const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
@@ -142,7 +181,7 @@ const createTeacherAssignment = async (req, res, next) => {
       academicYearId,
       gradeId,
       sectionId,
-      subjectId,
+      subjectId: subjectId || null,
       staffId,
       isClassTeacher: Boolean(isClassTeacher),
       assignmentType,
@@ -197,6 +236,8 @@ const updateTeacherAssignment = async (req, res, next) => {
         { schoolId, academicYearId: merged.academicYearId, sectionId: merged.sectionId, _id: { $ne: id }, isClassTeacher: true },
         { isClassTeacher: false }
       );
+      const effectiveStaffId = req.body.staffId || assignment.staffId;
+      await Section.updateOne({ _id: merged.sectionId, schoolId }, { $set: { classTeacherId: effectiveStaffId } });
     }
 
     Object.assign(assignment, req.body);
@@ -241,14 +282,16 @@ const deleteTeacherAssignment = async (req, res, next) => {
     }
 
     // Check if active timetable entries exist for this teacher and section/subject
-    const hasTimetable = await Timetable.countDocuments({
-      schoolId,
-      academicYearId: assignment.academicYearId,
-      sectionId: assignment.sectionId,
-      subjectId: assignment.subjectId,
-      teacherId: assignment.staffId,
-      status: { $ne: 'ARCHIVED' },
-    });
+    const hasTimetable = assignment.subjectId
+      ? await Timetable.countDocuments({
+          schoolId,
+          academicYearId: assignment.academicYearId,
+          sectionId: assignment.sectionId,
+          subjectId: assignment.subjectId,
+          teacherId: assignment.staffId,
+          status: { $ne: 'ARCHIVED' },
+        })
+      : 0;
 
     if (hasTimetable > 0) {
       throw new ValidationError(

@@ -5,6 +5,7 @@ const studentSchema = new mongoose.Schema(
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
     studentNumber: { type: String, required: true, trim: true },
     admissionNumber: { type: String, required: true, trim: true },
+    rollNumber: { type: String, trim: true, default: '' },
     firstName: { type: String, required: true, trim: true },
     middleName: { type: String, trim: true, default: '' },
     lastName: { type: String, required: true, trim: true },

@@ -11,12 +11,28 @@ const getRoles = async (req, res, next) => {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 50;
     const search = (req.query.search || '').trim().toLowerCase();
+    const status = (req.query.status || '').trim();
+    const roleType = (req.query.roleType || '').trim();
+    const hierarchyLevel = req.query.hierarchyLevel;
 
     // Retrieve system roles + school roles
     const query = {
       $or: [{ isSystem: true }, { schoolId }],
       status: { $ne: 'ARCHIVED' },
     };
+
+    if (status && status !== 'ALL') {
+      query.status = status;
+    }
+    if (roleType === 'SYSTEM') {
+      query.isSystem = true;
+    } else if (roleType === 'CUSTOM') {
+      query.isSystem = false;
+      query.schoolId = schoolId;
+    }
+    if (hierarchyLevel !== undefined && hierarchyLevel !== '' && hierarchyLevel !== 'ALL') {
+      query.hierarchyLevel = Number(hierarchyLevel);
+    }
 
     const roles = await Role.find(query).sort({ hierarchyLevel: 1 });
 

@@ -28,7 +28,7 @@ const getGrades = async (req, res, next) => {
     const gradeIds = grades.map((g) => g._id);
     const sections = gradeIds.length
       ? await Section.find({ schoolId, gradeId: { $in: gradeIds }, status: { $ne: 'ARCHIVED' } })
-          .select('name code gradeId')
+          .select('name code gradeId capacity room status')
           .sort({ name: 1 })
           .lean()
       : [];
@@ -36,7 +36,7 @@ const getGrades = async (req, res, next) => {
     sections.forEach((s) => {
       const key = String(s.gradeId);
       if (!sectionsByGrade.has(key)) sectionsByGrade.set(key, []);
-      sectionsByGrade.get(key).push({ _id: s._id, name: s.name, code: s.code });
+      sectionsByGrade.get(key).push({ _id: s._id, name: s.name, code: s.code, capacity: s.capacity, status: s.status });
     });
 
     const gradesWithSections = grades.map((g) => ({
@@ -53,7 +53,7 @@ const getGrades = async (req, res, next) => {
 const createGrade = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { name, code, category = 'Primary', sequenceOrder = 1, status: requestedStatus } = req.body;
+    const { name, code, category = 'Primary', sequenceOrder = 1, status: requestedStatus, sections = [] } = req.body;
 
     const trimmedName = String(name || '').trim();
     if (!trimmedName) {
@@ -88,6 +88,30 @@ const createGrade = async (req, res, next) => {
       status,
     });
 
+    const createdSections = [];
+    if (Array.isArray(sections) && sections.length > 0) {
+      for (let i = 0; i < sections.length; i++) {
+        const item = sections[i];
+        const sName = String(typeof item === 'string' ? item : item.name || '').trim();
+        if (!sName) continue;
+        let sCode = String(typeof item === 'string' ? '' : item.code || '').trim().toUpperCase();
+        if (!sCode) {
+          sCode = sName.length <= 4 ? sName.toUpperCase() : `S-${sName.replace(/section\s*/i, '').trim() || String.fromCharCode(65 + i)}`;
+        }
+        const sCap = Number(item.capacity) > 0 ? Number(item.capacity) : 40;
+
+        const sec = await Section.create({
+          schoolId,
+          gradeId: grade._id,
+          name: sName,
+          code: sCode,
+          capacity: sCap,
+          status: status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+        });
+        createdSections.push({ _id: sec._id, name: sec.name, code: sec.code, capacity: sec.capacity, status: sec.status });
+      }
+    }
+
     await logAuditEvent({
       schoolId,
       actorId: req.user?._id,
@@ -102,7 +126,8 @@ const createGrade = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, grade, 'Grade created successfully', 201);
+    const gradeData = { ...grade.toObject(), sections: createdSections };
+    return successResponse(res, gradeData, 'Grade created successfully', 201);
   } catch (error) {
     next(error);
   }
@@ -157,6 +182,71 @@ const updateGrade = async (req, res, next) => {
 
     await grade.save();
 
+    // If sections list is provided in update payload, sync additions, updates, and removals
+    if (Array.isArray(req.body.sections)) {
+      const incomingSections = req.body.sections;
+      const currentSections = await Section.find({ schoolId, gradeId: id, status: { $ne: 'ARCHIVED' } });
+
+      const incomingIds = new Set(
+        incomingSections
+          .map((s) => s._id || s.id)
+          .filter(Boolean)
+          .map(String)
+      );
+
+      // Handle removals
+      for (const curSec of currentSections) {
+        if (!incomingIds.has(String(curSec._id))) {
+          const [hasStudents, hasTimetable, hasAssignments] = await Promise.all([
+            Enrollment.countDocuments({ schoolId, sectionId: curSec._id, status: { $ne: 'ARCHIVED' } }),
+            Timetable.countDocuments({ schoolId, sectionId: curSec._id, status: { $ne: 'ARCHIVED' } }),
+            TeacherAssignment.countDocuments({ schoolId, sectionId: curSec._id, status: { $ne: 'ARCHIVED' } }),
+          ]);
+          if (hasStudents > 0 || hasTimetable > 0 || hasAssignments > 0) {
+            throw new ValidationError(`Cannot remove section '${curSec.name}' as it has active student enrollments, timetable, or teacher assignments.`);
+          }
+          curSec.status = 'ARCHIVED';
+          await curSec.save();
+        }
+      }
+
+      // Handle additions & updates
+      for (let i = 0; i < incomingSections.length; i++) {
+        const item = incomingSections[i];
+        const sName = String(typeof item === 'string' ? item : item.name || '').trim();
+        if (!sName) continue;
+        let sCode = String(typeof item === 'string' ? '' : item.code || '').trim().toUpperCase();
+        if (!sCode) {
+          sCode = sName.length <= 4 ? sName.toUpperCase() : `S-${sName.replace(/section\s*/i, '').trim() || String.fromCharCode(65 + i)}`;
+        }
+        const sCap = Number(item.capacity) > 0 ? Number(item.capacity) : 40;
+        const itemId = item._id || item.id;
+
+        if (itemId) {
+          const existingSec = currentSections.find((cs) => String(cs._id) === String(itemId));
+          if (existingSec) {
+            existingSec.name = sName;
+            existingSec.code = sCode;
+            existingSec.capacity = sCap;
+            await existingSec.save();
+          }
+        } else {
+          // Check for existing duplicate before creating
+          const dup = await Section.findOne({ schoolId, gradeId: id, $or: [{ name: sName }, { code: sCode }], status: { $ne: 'ARCHIVED' } });
+          if (!dup) {
+            await Section.create({
+              schoolId,
+              gradeId: id,
+              name: sName,
+              code: sCode,
+              capacity: sCap,
+              status: grade.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+            });
+          }
+        }
+      }
+    }
+
     await logAuditEvent({
       schoolId,
       actorId: req.user?._id,
@@ -172,7 +262,13 @@ const updateGrade = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, grade, 'Grade updated successfully');
+    const updatedSections = await Section.find({ schoolId, gradeId: id, status: { $ne: 'ARCHIVED' } })
+      .select('name code capacity status')
+      .sort({ name: 1 })
+      .lean();
+
+    const gradeData = { ...grade.toObject(), sections: updatedSections };
+    return successResponse(res, gradeData, 'Grade updated successfully');
   } catch (error) {
     next(error);
   }

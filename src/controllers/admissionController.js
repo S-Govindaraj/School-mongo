@@ -12,7 +12,7 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getAdmissions = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { search = '', status = '', gradeId = '', page = 1, limit = 50 } = req.query;
+    const { search = '', status = '', gradeId = '', academicYearId = '', page = 1, limit = 50 } = req.query;
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 50;
@@ -21,6 +21,7 @@ const getAdmissions = async (req, res, next) => {
     const query = { schoolId, status: { $ne: 'ARCHIVED' } };
     if (status && status !== 'ALL') query.status = status;
     if (gradeId) query.gradeId = gradeId;
+    if (academicYearId) query.academicYearId = academicYearId;
 
     if (search.trim()) {
       const s = String(search).trim();
