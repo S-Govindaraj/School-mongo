@@ -15,9 +15,28 @@ const getRoles = async (req, res, next) => {
     const roleType = (req.query.roleType || '').trim();
     const hierarchyLevel = req.query.hierarchyLevel;
 
-    // Retrieve system roles + school roles
+    // Ensure a standard Teacher role exists in the database
+    let teacherRole = await Role.findOne({ code: 'TEACHER' });
+    if (!teacherRole) {
+      teacherRole = await Role.create({
+        name: 'Teacher',
+        code: 'TEACHER',
+        description: 'Educator and Classroom Teacher with academic permissions',
+        hierarchyLevel: 4,
+        isSystem: true,
+        schoolId: null,
+        status: 'ACTIVE',
+        permissions: ['staff_view', 'teacher_view', 'grade_view', 'section_view', 'subject_view', 'class_subject_view', 'teacher_assignment_view', 'mobile_app_view', 'mobile_sync_view'],
+      });
+    } else if (teacherRole.name !== 'Teacher' || !teacherRole.isSystem) {
+      teacherRole.name = 'Teacher';
+      teacherRole.isSystem = true;
+      await teacherRole.save();
+    }
+
+    // Retrieve system roles (isSystem: true or schoolId: null) + current school roles
     const query = {
-      $or: [{ isSystem: true }, { schoolId }],
+      $or: [{ isSystem: true }, { schoolId: null }, { schoolId }],
       status: { $ne: 'ARCHIVED' },
     };
 
@@ -25,7 +44,7 @@ const getRoles = async (req, res, next) => {
       query.status = status;
     }
     if (roleType === 'SYSTEM') {
-      query.isSystem = true;
+      query.$or = [{ isSystem: true }, { schoolId: null }];
     } else if (roleType === 'CUSTOM') {
       query.isSystem = false;
       query.schoolId = schoolId;

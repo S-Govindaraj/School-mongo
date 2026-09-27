@@ -8,6 +8,7 @@ const enrollmentSchema = new mongoose.Schema(
     gradeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Grade', required: true },
     sectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Section', required: true },
     rollNumber: { type: String, trim: true, default: '' },
+    enrollmentNumber: { type: String, trim: true, index: true },
     enrollmentDate: { type: Date, default: Date.now },
     status: {
       type: String,

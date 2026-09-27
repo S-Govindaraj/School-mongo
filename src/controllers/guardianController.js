@@ -1,5 +1,6 @@
 const Guardian = require('../models/Guardian');
 const StudentGuardian = require('../models/StudentGuardian');
+const Student = require('../models/Student');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
@@ -182,6 +183,15 @@ const deleteGuardian = async (req, res, next) => {
     guardian.status = 'INACTIVE';
     await guardian.save();
 
+    // If guardian was set as emergency contact on linked students, clear it
+    const links = await StudentGuardian.find({ schoolId, guardianId: id });
+    for (const link of links) {
+      await Student.updateOne(
+        { _id: link.studentId, schoolId, 'emergencyContact.name': guardian.name },
+        { $set: { 'emergencyContact.name': '', 'emergencyContact.relationship': '', 'emergencyContact.phone': '' } }
+      );
+    }
+
     await logAuditEvent({
       schoolId,
       actorId: req.user?._id,
@@ -214,6 +224,17 @@ const restoreGuardian = async (req, res, next) => {
     const oldValues = guardian.toObject();
     guardian.status = 'ACTIVE';
     await guardian.save();
+
+    // If restored guardian is marked as emergency contact, re-link on linked students if empty
+    if (guardian.isEmergencyContact) {
+      const links = await StudentGuardian.find({ schoolId, guardianId: id });
+      for (const link of links) {
+        await Student.updateOne(
+          { _id: link.studentId, schoolId, $or: [{ 'emergencyContact.name': '' }, { 'emergencyContact.name': null }] },
+          { $set: { 'emergencyContact.name': guardian.name, 'emergencyContact.relationship': link.relationship || guardian.relationship, 'emergencyContact.phone': guardian.phone } }
+        );
+      }
+    }
 
     await logAuditEvent({
       schoolId,

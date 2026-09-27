@@ -406,6 +406,8 @@ const getSchoolAttendanceSummary = async (req, res, next) => {
     const [totalStudents, todayRecords] = await Promise.all([
       Student.countDocuments({ schoolId, status: 'ACTIVE' }),
       AttendanceRecord.find({ schoolId, date: targetDate })
+        .populate('gradeId', 'name')
+        .populate('sectionId', 'name')
         .populate('statusId', 'code countsAsPresent countsAsAbsent')
         .lean(),
     ]);
@@ -414,11 +416,33 @@ const getSchoolAttendanceSummary = async (req, res, next) => {
     let absentToday = 0;
     let lateToday = 0;
 
+    const sectionMap = {};
     for (const r of todayRecords) {
       if (r.statusId?.countsAsPresent) presentToday++;
       if (r.statusId?.countsAsAbsent) absentToday++;
       if (r.statusId?.code === 'LATE') lateToday++;
+
+      const secKey = String(r.sectionId?._id || r.sectionId || '');
+      if (secKey) {
+        if (!sectionMap[secKey]) {
+          sectionMap[secKey] = {
+            gradeName: r.gradeId?.name || 'Grade',
+            sectionName: r.sectionId?.name || 'Section',
+            total: 0,
+            present: 0,
+            absent: 0,
+          };
+        }
+        sectionMap[secKey].total++;
+        if (r.statusId?.countsAsPresent) sectionMap[secKey].present++;
+        if (r.statusId?.countsAsAbsent) sectionMap[secKey].absent++;
+      }
     }
+
+    const sections = Object.values(sectionMap).map((s) => ({
+      ...s,
+      percentage: s.total > 0 ? Math.round((s.present / s.total) * 100) : 0,
+    }));
 
     const pct = totalStudents > 0 && todayRecords.length > 0
       ? Math.round((presentToday / todayRecords.length) * 100)
@@ -426,11 +450,16 @@ const getSchoolAttendanceSummary = async (req, res, next) => {
 
     return successResponse(res, {
       totalStudents,
+      totalRecords: todayRecords.length,
       markedToday: todayRecords.length,
       presentToday,
+      presentCount: presentToday,
       absentToday,
+      absentCount: absentToday,
       lateToday,
+      lateCount: lateToday,
       attendancePercentage: pct,
+      sections,
     }, 'School attendance summary retrieved');
   } catch (error) {
     next(error);

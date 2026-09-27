@@ -35,6 +35,8 @@ const documentSchema = new mongoose.Schema(
     verifiedAt: { type: Date },
     expiresAt: { type: Date },
     rejectionReason: { type: String, trim: true },
+    fileUrl: { type: String },
+    description: { type: String, trim: true },
     metadata: { type: Map, of: String },
   },
   { timestamps: true }

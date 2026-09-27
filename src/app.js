@@ -5,12 +5,16 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
+const path = require('path');
 const { requestContextMiddleware, errorHandlerMiddleware } = require('./middleware/requestContext');
 const { NotFoundError } = require('./utils/errors');
 const authRoutes = require('./routes/authRoutes');
 const apiRoutes = require('./routes/apiRoutes');
 
 const app = express();
+
+// Serve uploads statically with cross-origin access
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.use(
   helmet({

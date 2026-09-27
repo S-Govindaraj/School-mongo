@@ -156,46 +156,66 @@ const getStudent360 = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
     const { id } = req.params;
+    const isObjectId = mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === String(id);
+    const student = isObjectId
+      ? await Student.findOne({ _id: id, schoolId }).lean()
+      : await Student.findOne({ schoolId, $or: [{ studentNumber: id }, { admissionNumber: id }] }).lean();
 
-    const student = await Student.findOne({ _id: id, schoolId }).lean();
     if (!student) {
       throw new NotFoundError('Student profile not found');
     }
 
+    const resolvedStudentId = student._id;
+
     const [guardiansLinks, enrollments, documents, academicHistory, auditLogs] = await Promise.all([
-      StudentGuardian.find({ schoolId, studentId: id })
+      StudentGuardian.find({ schoolId, studentId: resolvedStudentId })
         .populate('guardianId')
         .lean(),
-      Enrollment.find({ schoolId, studentId: id })
+      Enrollment.find({ schoolId, studentId: resolvedStudentId })
         .populate('academicYearId', 'name code')
         .populate('gradeId', 'name code')
         .populate('sectionId', 'name code')
         .sort({ createdAt: -1 })
         .lean(),
-      StudentDocument.find({ schoolId, studentId: id, status: 'ACTIVE' }).lean(),
-      AcademicHistory.find({ schoolId, studentId: id })
+      StudentDocument.find({ schoolId, studentId: resolvedStudentId, status: 'ACTIVE' }).lean(),
+      AcademicHistory.find({ schoolId, studentId: resolvedStudentId })
         .populate('academicYearId', 'name')
         .populate('gradeId', 'name')
         .populate('sectionId', 'name')
         .lean(),
-      AuditLog.find({ schoolId, entityId: String(id) })
+      AuditLog.find({ schoolId, entityId: String(resolvedStudentId) })
         .sort({ timestamp: -1 })
         .limit(20)
         .lean(),
     ]);
 
-    const guardians = guardiansLinks.map((g) => ({
-      ...g.guardianId,
-      id: String(g.guardianId?._id || ''),
-      relationship: g.relationship,
-      isPrimary: g.isPrimary,
-      isEmergencyContact: g.isEmergencyContact,
-    }));
+    const activeGuardians = guardiansLinks
+      .filter((g) => g.guardianId && g.guardianId.status === 'ACTIVE')
+      .map((g) => ({
+        ...g.guardianId,
+        id: String(g.guardianId?._id || ''),
+        relationship: g.relationship,
+        isPrimary: g.isPrimary,
+        isEmergencyContact: g.isEmergencyContact,
+      }));
+
+    const inactiveGuardianNames = new Set(
+      guardiansLinks
+        .filter((g) => g.guardianId && (g.guardianId.status === 'INACTIVE' || g.guardianId.status === 'ARCHIVED'))
+        .map((g) => g.guardianId.name?.toLowerCase().trim())
+        .filter(Boolean)
+    );
+
+    let sanitizedEmergency = student.emergencyContact ? { ...student.emergencyContact } : null;
+    if (sanitizedEmergency?.name && inactiveGuardianNames.has(sanitizedEmergency.name.toLowerCase().trim())) {
+      sanitizedEmergency = null;
+    }
 
     const profile360 = {
       ...student,
       id: String(student._id),
-      guardians,
+      emergencyContact: sanitizedEmergency,
+      guardians: activeGuardians,
       enrollments: enrollments.map((e) => ({ ...e, id: String(e._id) })),
       documents: documents.map((d) => ({ ...d, id: String(d._id) })),
       academicHistory: academicHistory.map((h) => ({ ...h, id: String(h._id) })),

@@ -112,6 +112,8 @@ const ledgerController = require('../controllers/ledgerController');
 const financialAdjustmentController = require('../controllers/financialAdjustmentController');
 const financeDashboardController = require('../controllers/financeDashboardController');
 const errorLogController = require('../controllers/errorLogController');
+const departmentController = require('../controllers/departmentController');
+const qualificationController = require('../controllers/qualificationController');
 
 // Client-side error reporting (accepts optional auth so pre-login & unhandled frontend errors are captured)
 router.post('/error-logs/client', optionalAuthenticate, errorLogController.recordClientError);
@@ -182,11 +184,25 @@ router.delete('/class-subjects/:id', requirePermissions('class_subject_edit'), c
 // --- Staff & Teachers ---
 router.get('/staff', requirePermissions('staff_view'), staffController.getStaff);
 router.get('/staff/:id', requirePermissions('staff_view'), staffController.getStaffById);
-router.post('/staff', requirePermissions('staff_manage'), validate(staffSchema), staffController.createStaff);
-router.patch('/staff/:id', requirePermissions('staff_manage'), validate(updateStaffSchema), staffController.updateStaff);
-router.put('/staff/:id', requirePermissions('staff_manage'), validate(updateStaffSchema), staffController.updateStaff);
-router.post('/staff/:id/restore', requirePermissions('staff_manage'), staffController.restoreStaff);
-router.delete('/staff/:id', requirePermissions('staff_manage'), staffController.deleteStaff);
+router.post('/staff', requirePermissions('staff_create'), validate(staffSchema), staffController.createStaff);
+router.patch('/staff/:id', requirePermissions('staff_edit'), validate(updateStaffSchema), staffController.updateStaff);
+router.put('/staff/:id', requirePermissions('staff_edit'), validate(updateStaffSchema), staffController.updateStaff);
+router.post('/staff/:id/restore', requirePermissions('staff_active'), staffController.restoreStaff);
+router.delete('/staff/:id', requirePermissions('staff_inactive'), staffController.deleteStaff);
+
+// --- Departments & Qualifications ---
+router.get('/departments', departmentController.getDepartments);
+router.get('/departments/:id', departmentController.getDepartmentById);
+router.post('/departments', departmentController.createDepartment);
+router.patch('/departments/:id', departmentController.updateDepartment);
+router.put('/departments/:id', departmentController.updateDepartment);
+router.delete('/departments/:id', departmentController.deleteDepartment);
+
+router.get('/qualifications', qualificationController.getQualifications);
+router.get('/qualifications/:id', qualificationController.getQualificationById);
+router.post('/qualifications', qualificationController.createQualification);
+router.patch('/qualifications/:id', qualificationController.updateQualification);
+router.put('/qualifications/:id', qualificationController.updateQualification);
 
 // --- Teacher Assignments ---
 router.get('/teacher-assignments', requirePermissions('teacher_assignment_view'), teacherAssignmentController.getTeacherAssignments);
@@ -269,9 +285,10 @@ router.get('/students/:studentId/360/medical', requirePermissions('student_view'
 router.get('/guardians', requirePermissions('guardian_view'), guardianController.getGuardians);
 router.get('/guardians/:id', requirePermissions('guardian_view'), guardianController.getGuardianById);
 router.post('/guardians', requirePermissions('guardian_create'), validate(guardianSchema), guardianController.createGuardian);
-router.patch('/guardians/:id', requirePermissions('guardian_update'), validate(updateGuardianSchema), guardianController.updateGuardian);
-router.post('/guardians/:id/restore', requirePermissions('guardian_update'), guardianController.restoreGuardian);
-router.delete('/guardians/:id', requirePermissions('guardian_update'), guardianController.deleteGuardian);
+router.patch('/guardians/:id', requirePermissions('guardian_edit'), validate(updateGuardianSchema), guardianController.updateGuardian);
+router.put('/guardians/:id', requirePermissions('guardian_edit'), validate(updateGuardianSchema), guardianController.updateGuardian);
+router.post('/guardians/:id/restore', requirePermissions('guardian_active'), guardianController.restoreGuardian);
+router.delete('/guardians/:id', requirePermissions('guardian_inactive'), guardianController.deleteGuardian);
 router.post('/students/:studentId/guardians', requirePermissions('guardian_create'), guardianController.linkGuardianToStudent);
 
 // --- Admissions ---
@@ -288,7 +305,15 @@ router.post('/enrollments/promote', requirePermissions('enrollment_promote'), en
 
 // --- Documents ---
 router.get('/students/:studentId/documents', requirePermissions('student_view'), documentController.getStudentDocuments);
-router.post('/students/:studentId/documents', requirePermissions('student_update'), documentController.uploadDocument);
+router.post('/students/:studentId/documents', requirePermissions('student_update'), documentController.uploadMiddleware.single('file'), documentController.uploadDocument);
+router.put('/students/:studentId/documents/:id', requirePermissions('student_update'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
+router.delete('/students/:studentId/documents/:id', requirePermissions('student_archive'), documentController.deleteDocument);
+
+router.get('/documents/:id/file', documentController.serveDocumentFile);
+router.get('/documents/:id/preview', documentController.serveDocumentFile);
+router.get('/documents/:id/download', documentController.downloadDocumentFile);
+router.put('/documents/:id', requirePermissions('document_edit'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
+router.patch('/documents/:id', requirePermissions('document_edit'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
 router.delete('/documents/:id', requirePermissions('student_archive'), documentController.deleteDocument);
 
 // --- Settings ---
@@ -544,7 +569,7 @@ router.patch('/library/settings', requirePermissions('library_manage'), libraryC
 // --- Phase 7: Document Management ---
 router.get('/documents/dashboard', requirePermissions('document_view'), docManagementController.getDashboard);
 router.get('/documents', requirePermissions('document_view'), docManagementController.getDocuments);
-router.post('/documents/upload', requirePermissions('document_upload'), docManagementController.uploadDocument);
+router.post('/documents/upload', requirePermissions('document_upload'), docManagementController.uploadMiddleware.single('file'), docManagementController.uploadDocument);
 router.patch('/documents/:id/verify', requirePermissions('document_verify'), docManagementController.verifyDocument);
 router.patch('/documents/:id/reject', requirePermissions('document_verify'), docManagementController.rejectDocument);
 router.patch('/documents/:id/archive', requirePermissions('document_manage'), docManagementController.archiveDocument);
