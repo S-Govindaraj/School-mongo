@@ -1,6 +1,6 @@
 const AcademicTerm = require('../models/AcademicTerm');
 const AcademicYear = require('../models/AcademicYear');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceDay = require('../models/AttendanceDay');
 const ExamResult = require('../models/ExamResult');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
@@ -374,9 +374,18 @@ const deleteAcademicTerm = async (req, res, next) => {
       throw new NotFoundError('Academic term not found.');
     }
 
-    // Check dependencies
+    // Check dependencies. AttendanceRecord has no termId field (it only
+    // carries academicYearId + a plain date) — the previous filter here
+    // matched that non-existent field and always returned 0, so this guard
+    // never actually fired. Matched instead by date range within the term's
+    // own academicYearId, which is the only way to attribute a record to a
+    // term.
     const [hasAttendance, hasExams] = await Promise.all([
-      AttendanceRecord.countDocuments({ schoolId, termId: id }).catch(() => 0),
+      AttendanceDay.countDocuments({
+        schoolId,
+        academicYearId: term.academicYearId,
+        date: { $gte: term.startDate, $lte: term.endDate },
+      }).catch(() => 0),
       ExamResult.countDocuments({ schoolId, academicTermId: id }).catch(() => 0),
     ]);
 

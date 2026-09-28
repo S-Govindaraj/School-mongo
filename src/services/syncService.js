@@ -1,11 +1,12 @@
 const SyncRecord = require('../models/SyncRecord');
-const AttendanceSession = require('../models/AttendanceSession');
-const AttendanceRecord = require('../models/AttendanceRecord');
-const Student = require('../models/Student');
+const AttendanceStatus = require('../models/AttendanceStatus');
+const Enrollment = require('../models/Enrollment');
 const LeaveRequest = require('../models/LeaveRequest');
 const Visitor = require('../models/Visitor');
 const { logAuditEvent } = require('../middleware/auditLogger');
-const { ValidationError } = require('../utils/errors');
+const { ValidationError, ForbiddenError } = require('../utils/errors');
+const { upsertPeriodEntry } = require('./attendanceDayService');
+const { resolveAttendanceScope, assertSectionInScope } = require('./attendanceScopeService');
 
 class SyncService {
   /**
@@ -134,48 +135,77 @@ class SyncService {
   }
 
   // ─── Domain Sync Handlers ──────────────────────────────────
-  async handleAttendanceSync({ schoolId, userId, payload }) {
-    const { sessionId, records = [] } = payload;
-    if (!sessionId) {
-      throw new ValidationError('Session ID is required for attendance sync');
+  /**
+   * Mirrors POST /attendance/mark-bulk's contract (single-collection
+   * AttendanceDay model — no more sessionId/AttendanceSession to reference).
+   * Re-derives the caller's attendance scope here since this generic sync
+   * route has no attendanceScope middleware attached — a class teacher's
+   * offline mutation must be just as section-scoped as their online one.
+   */
+  async handleAttendanceSync({ schoolId, userId, payload, actor }) {
+    const { academicYearId, date, gradeId, sectionId, periodId, attendanceType = 'DAILY', records = [] } = payload;
+    if (!academicYearId || !date || !sectionId || !records.length) {
+      throw new ValidationError('academicYearId, date, sectionId and at least one record are required for attendance sync.');
     }
 
-    // Verify session existence and lock state
-    const session = await AttendanceSession.findOne({ _id: sessionId, schoolId });
-    if (!session) {
-      const err = new Error('Attendance session not found on server');
-      err.code = 'SYNC_CONFLICT';
-      err.isConflict = true;
-      throw err;
+    const scope = await resolveAttendanceScope({ schoolContext: { schoolId }, user: actor });
+    try {
+      assertSectionInScope(scope, sectionId);
+    } catch (err) {
+      throw new ForbiddenError(err.message);
     }
 
-    if (session.isLocked) {
-      const err = new Error('Attendance session is already locked on server');
-      err.code = 'SYNC_CONFLICT';
-      err.isConflict = true;
-      err.serverData = session;
-      throw err;
-    }
+    const targetDate = new Date(date);
+    const normalizedPeriodId = periodId || null;
 
-    const savedRecords = [];
+    const allStatuses = await AttendanceStatus.find({ schoolId, status: 'ACTIVE' });
+    const statusMap = new Map(allStatuses.map((s) => [String(s._id), s]));
+
+    const recordStudentIds = records.map((r) => r.studentId);
+    const activeEnrollments = await Enrollment.find({
+      schoolId, studentId: { $in: recordStudentIds }, gradeId, sectionId, academicYearId,
+      status: { $in: ['ENROLLED', 'ACTIVE'] },
+    });
+    const enrollmentMap = new Map(activeEnrollments.map((e) => [String(e.studentId), e]));
+
+    let syncedCount = 0;
+    let conflictCount = 0;
+
     for (const r of records) {
-      const student = await Student.findOne({ _id: r.studentId, schoolId });
-      if (!student) continue;
+      const activeEnrollment = enrollmentMap.get(String(r.studentId));
+      if (!activeEnrollment) continue;
 
-      const record = await AttendanceRecord.findOneAndUpdate(
-        { schoolId, sessionId, studentId: r.studentId },
-        {
-          status: r.status || 'PRESENT',
-          remarks: r.remarks || 'Marked via Mobile Offline',
+      const statusDoc = statusMap.get(String(r.statusId));
+      if (!statusDoc) continue;
+
+      const result = await upsertPeriodEntry({
+        schoolId, academicYearId, date: targetDate, attendanceType,
+        studentId: r.studentId, enrollmentId: r.enrollmentId || activeEnrollment._id, gradeId, sectionId,
+        periodId: normalizedPeriodId,
+        fields: {
+          statusId: r.statusId,
+          remarks: String(r.remarks || '').trim(),
           markedBy: userId,
-          markedAt: new Date()
+          markedAt: new Date(),
+          source: 'BULK',
         },
-        { upsert: true, new: true }
-      );
-      savedRecords.push(record);
+      });
+
+      if (result.outcome === 'LOCKED') {
+        conflictCount++;
+        continue;
+      }
+      syncedCount++;
     }
 
-    return { sessionId, count: savedRecords.length };
+    if (syncedCount === 0 && conflictCount > 0) {
+      const err = new Error('This attendance period is already locked on server.');
+      err.code = 'SYNC_CONFLICT';
+      err.isConflict = true;
+      throw err;
+    }
+
+    return { date, sectionId, periodId: normalizedPeriodId, count: syncedCount, lockedSkipped: conflictCount };
   }
 
   async handleLeaveSync({ schoolId, userId, payload }) {

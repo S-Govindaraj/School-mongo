@@ -33,4 +33,4 @@ attendanceRecordSchema.index({ schoolId: 1, sectionId: 1, date: 1 });
 // Bulk mark attendance uses studentId $in + section + AY
 attendanceRecordSchema.index({ schoolId: 1, gradeId: 1, sectionId: 1, academicYearId: 1, date: 1 });
 
-module.exports = mongoose.model('AttendanceRecord', attendanceRecordSchema);
+module.exports = mongoose.model('AttendanceRecord', attendanceRecordSchema, 'attendanceRecords');

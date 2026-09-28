@@ -4,8 +4,7 @@ const ClassSubject = require('../models/ClassSubject');
 const TeacherAssignment = require('../models/TeacherAssignment');
 const Enrollment = require('../models/Enrollment');
 const Timetable = require('../models/Timetable');
-const AttendanceRecord = require('../models/AttendanceRecord');
-const AttendanceSession = require('../models/AttendanceSession');
+const AttendanceDay = require('../models/AttendanceDay');
 const FeeStructure = require('../models/FeeStructure');
 const ExamResult = require('../models/ExamResult');
 const { successResponse } = require('../utils/response');
@@ -369,8 +368,7 @@ const deleteAcademicYear = async (req, res, next) => {
       teacherAssignmentCount,
       enrollmentCount,
       timetableCount,
-      attendanceRecordCount,
-      attendanceSessionCount,
+      attendanceDayCount,
       feeStructureCount,
       examResultCount,
     ] = await Promise.all([
@@ -379,8 +377,7 @@ const deleteAcademicYear = async (req, res, next) => {
       TeacherAssignment.countDocuments({ schoolId, academicYearId: id }),
       Enrollment.countDocuments({ schoolId, academicYearId: id }),
       Timetable.countDocuments({ schoolId, academicYearId: id }),
-      AttendanceRecord.countDocuments({ schoolId, academicYearId: id }),
-      AttendanceSession.countDocuments({ schoolId, academicYearId: id }),
+      AttendanceDay.countDocuments({ schoolId, academicYearId: id }),
       FeeStructure.countDocuments({ schoolId, academicYearId: id }),
       ExamResult.countDocuments({ schoolId, academicYearId: id }),
     ]);
@@ -391,8 +388,7 @@ const deleteAcademicYear = async (req, res, next) => {
       teacherAssignmentCount +
       enrollmentCount +
       timetableCount +
-      attendanceRecordCount +
-      attendanceSessionCount +
+      attendanceDayCount +
       feeStructureCount +
       examResultCount;
 

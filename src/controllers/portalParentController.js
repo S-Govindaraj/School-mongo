@@ -2,7 +2,8 @@ const Guardian = require('../models/Guardian');
 const StudentGuardian = require('../models/StudentGuardian');
 const Student = require('../models/Student');
 const Enrollment = require('../models/Enrollment');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceDay = require('../models/AttendanceDay');
+const { flattenPeriodsToRecords } = require('../services/attendanceDayService');
 const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
 const Timetable = require('../models/Timetable');
@@ -120,12 +121,16 @@ const getParentDashboardData = async (req, res, next) => {
     const sectionId = targetChild.enrollment?.sectionId?._id;
     const sectionName = targetChild.sectionName || '';
 
-    // 1. Real Attendance Records & Metrics
-    const records = await AttendanceRecord.find({ schoolId, studentId: sId })
-      .populate('statusId', 'code name category')
+    // 1. Real Attendance Records & Metrics — last 30 days (a PERIOD-mode
+    // student's day can contribute multiple flattened rows, one per marked
+    // period; percentage below is computed over those rows, i.e. per
+    // confirmed decision, over period-slots rather than one status/day).
+    const attendanceDays = await AttendanceDay.find({ schoolId, studentId: sId })
+      .populate('periods.statusId', 'code name category')
       .sort({ date: -1 })
       .limit(30)
       .lean();
+    const records = flattenPeriodsToRecords(attendanceDays);
 
     const presentCount = records.filter((r) => r.statusId?.code === 'PRESENT').length;
     const absentCount = records.filter((r) => r.statusId?.code === 'ABSENT').length;
@@ -290,10 +295,11 @@ const getChildAttendance = async (req, res, next) => {
       return errorResponse(res, 'Unauthorized access to student record', 403, 'FORBIDDEN');
     }
 
-    const records = await AttendanceRecord.find({ schoolId, studentId })
-      .populate('statusId', 'code name category')
+    const attendanceDays = await AttendanceDay.find({ schoolId, studentId })
+      .populate('periods.statusId', 'code name category')
       .sort({ date: -1 })
       .lean();
+    const records = flattenPeriodsToRecords(attendanceDays);
 
     return successResponse(res, records, 'Child attendance records loaded');
   } catch (error) {

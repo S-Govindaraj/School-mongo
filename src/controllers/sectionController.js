@@ -7,6 +7,7 @@ const Enrollment = require('../models/Enrollment');
 const Timetable = require('../models/Timetable');
 const ClassSubject = require('../models/ClassSubject');
 const Subject = require('../models/Subject');
+const AttendanceDay = require('../models/AttendanceDay');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
@@ -441,7 +442,7 @@ const deleteSection = async (req, res, next) => {
       TeacherAssignment.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } }),
       Enrollment.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } }),
       Timetable.countDocuments({ schoolId, sectionId: id, status: { $ne: 'ARCHIVED' } }),
-      AttendanceRecord.countDocuments({ schoolId, sectionId: id }),
+      AttendanceDay.countDocuments({ schoolId, sectionId: id }),
     ]);
 
     if (hasAssignments > 0 || hasEnrollments > 0 || hasTimetable > 0 || hasAttendance > 0) {

@@ -181,6 +181,7 @@ const permissionsData = [
   { id: 'attendance_mark', module: 'Attendance & Leave', action: 'mark', code: 'attendance_mark', name: 'Mark Attendance', description: 'Take and submit daily/period attendance' },
   { id: 'attendance_correct', module: 'Attendance & Leave', action: 'correct', code: 'attendance_correct', name: 'Correct Attendance', description: 'Audit correct attendance with mandatory reason' },
   { id: 'attendance_report', module: 'Attendance & Leave', action: 'report', code: 'attendance_report', name: 'Attendance Dashboard', description: 'Access school-wide attendance analytics' },
+  { id: 'attendance_view_all', module: 'Attendance & Leave', action: 'view', code: 'attendance_view_all', name: 'View All Sections\' Attendance', description: 'Bypass class-teacher section scoping — view/mark/correct any section\'s attendance, not just your own homeroom' },
   { id: 'attendance_status_view', module: 'Attendance & Leave', action: 'view', code: 'attendance_status_view', name: 'View Statuses', description: 'View master attendance statuses' },
   { id: 'attendance_status_manage', module: 'Attendance & Leave', action: 'manage', code: 'attendance_status_manage', name: 'Manage Statuses', description: 'Configure master attendance statuses' },
 
@@ -730,7 +731,15 @@ async function seed() {
         : r.code === 'PRINCIPAL' || r.code === 'VICE_PRINCIPAL'
         ? permCodes.filter((c) => !c.includes('settings'))
         : r.code.includes('TEACHER') || r.code === 'HOD'
-        ? ['staff_view', 'teacher_view', 'grade_view', 'section_view', 'subject_view', 'class_subject_view', 'teacher_assignment_view', 'mobile_app_view', 'mobile_sync_view']
+        ? [
+            'staff_view', 'teacher_view', 'grade_view', 'section_view', 'subject_view', 'class_subject_view', 'teacher_assignment_view', 'mobile_app_view', 'mobile_sync_view',
+            // Class Attendance Tab (CLASS_ATTENDANCE_TAB_ARCHITECTURE.md §2): every
+            // teacher can mark/view/correct attendance, scoped server-side to their
+            // own homeroom section(s) via attendanceScopeService — deliberately NOT
+            // granted attendance_view_all, which stays admin-only (see the
+            // PRINCIPAL/VICE_PRINCIPAL branch above).
+            'attendance_mark', 'attendance_view', 'attendance_correct',
+          ]
         : ['staff_view', 'teacher_view', 'school_view', 'campus_view', 'grade_view', 'section_view', 'mobile_app_view'];
 
       const role = await Role.create({ ...r, permissions: rolePerms });

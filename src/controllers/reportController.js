@@ -1,7 +1,8 @@
 const ReportDefinition = require('../models/ReportDefinition');
 const ReportSchedule = require('../models/ReportSchedule');
 const Student = require('../models/Student');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceDay = require('../models/AttendanceDay');
+const { flattenPeriodsToRecords } = require('../services/attendanceDayService');
 const Invoice = require('../models/Invoice');
 
 const sendSuccess = (res, data = {}, status = 200) => {
@@ -96,13 +97,26 @@ exports.generateReport = async (req, res, next) => {
         gender: s.gender || 'MALE'
       }));
     } else if (reportCode === 'ATTENDANCE_SUMMARY') {
-      const attendance = await AttendanceRecord.find({ schoolId }).limit(100);
-      records = attendance.map(a => ({
-        date: a.date,
-        presentCount: a.status === 'PRESENT' ? 1 : 0,
-        absentCount: a.status === 'ABSENT' ? 1 : 0,
-        percentage: '96%'
-      }));
+      // Fixed: this previously read `a.status`, a field that doesn't exist
+      // on the real schema (the status is a ref, `statusId`) — every row
+      // silently came back presentCount:0, absentCount:0, and the
+      // percentage was a hardcoded '96%' placeholder, not real data.
+      const days = await AttendanceDay.find({ schoolId })
+        .populate('periods.statusId', 'code countsAsPresent countsAsAbsent')
+        .sort({ date: -1 })
+        .limit(100)
+        .lean();
+      const flatRecords = flattenPeriodsToRecords(days);
+      records = flatRecords.map((r) => {
+        const isPresent = !!r.statusId?.countsAsPresent;
+        const isAbsent = !!r.statusId?.countsAsAbsent;
+        return {
+          date: r.date,
+          presentCount: isPresent ? 1 : 0,
+          absentCount: isAbsent ? 1 : 0,
+          percentage: isPresent ? '100%' : '0%',
+        };
+      });
     } else {
       const invoices = await Invoice.find({ schoolId }).limit(100);
       records = invoices.map(i => ({

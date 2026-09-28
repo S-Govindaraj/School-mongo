@@ -2,9 +2,10 @@ const syncService = require('../services/syncService');
 const MobileDevice = require('../models/MobileDevice');
 const Timetable = require('../models/Timetable');
 const Announcement = require('../models/Announcement');
-const AttendanceSession = require('../models/AttendanceSession');
+const AttendanceDay = require('../models/AttendanceDay');
 const Notification = require('../models/Notification');
 const { successResponse } = require('../utils/response');
+const { resolveAttendanceScope, applyScopeToFilter } = require('../services/attendanceScopeService');
 
 // ─── Sync Mutations ──────────────────────────────────────────
 const syncMutations = async (req, res, next) => {
@@ -112,24 +113,35 @@ const getMobileDashboard = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     const userId = req.user?._id;
     const userRole = req.user?.role?.name || 'STUDENT';
-    const today = new Date().toISOString().slice(0, 10);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
 
-    const [announcements, unreadNotifications, activeSessions] = await Promise.all([
+    // Fixed: previously queried `sessionDate`/`isLocked`, neither of which
+    // exist on the real schema (an always-empty read) — now scoped to the
+    // caller's own section(s) via attendanceScopeService, same as the main
+    // /attendance/roster endpoint.
+    const scope = await resolveAttendanceScope(req);
+    const dayFilter = { schoolId, date: { $gte: startOfToday, $lte: endOfToday } };
+    applyScopeToFilter(dayFilter, scope);
+
+    const [announcements, unreadNotifications, todaySections] = await Promise.all([
       Announcement.find({ schoolId, status: 'PUBLISHED' }).sort({ publishedAt: -1 }).limit(3),
       Notification.countDocuments({ schoolId, recipientId: userId, isRead: false }),
-      AttendanceSession.find({ schoolId, sessionDate: today }).limit(5)
+      AttendanceDay.find(dayFilter).select('sectionId periods.sessionStatus').limit(5).lean(),
     ]);
 
     return successResponse(res, {
       role: userRole,
-      today,
+      today: startOfToday.toISOString().slice(0, 10),
       unreadNotifications,
       announcements,
-      activeSessions: activeSessions.map(s => ({
-        id: s._id,
-        sectionId: s.sectionId,
-        isLocked: s.isLocked
-      }))
+      activeSessions: todaySections.map((d) => ({
+        id: d._id,
+        sectionId: d.sectionId,
+        isLocked: (d.periods || []).length > 0 && d.periods.every((p) => p.sessionStatus === 'LOCKED'),
+      })),
     }, 'Mobile dashboard aggregation retrieved');
   } catch (err) {
     next(err);

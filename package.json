@@ -40,7 +40,13 @@
     "seed:subject-teachers": "node src/scripts/seedSubjectTeachersAndAssignments.js --commit",
     "seed:subject-teachers:dry-run": "node src/scripts/seedSubjectTeachersAndAssignments.js --dry-run",
     "migrate:class-teachers": "node src/scripts/migrateClassTeacherToSections.js --commit",
-    "migrate:class-teachers:dry-run": "node src/scripts/migrateClassTeacherToSections.js --dry-run"
+    "migrate:class-teachers:dry-run": "node src/scripts/migrateClassTeacherToSections.js --dry-run",
+    "seed:attendance": "node src/scripts/seedAttendanceData.js",
+    "seed:attendance:quick": "node src/scripts/quickSeedAttendance.js",
+    "seed:attendance:dry-run": "node src/scripts/seedAttendanceData.js --dry-run",
+    "clean:attendance": "node src/scripts/cleanAttendanceData.js",
+    "delete:attendance": "node src/scripts/deleteAllAttendanceData.js",
+    "migrate:attendance-collections": "node src/scripts/migrateAttendanceCollections.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -96,6 +96,7 @@ const timetableGeneratorController = require('../controllers/timetableGeneratorC
 const timetableGeneratorDraftController = require('../controllers/timetableGeneratorDraftController');
 const attendanceStatusController = require('../controllers/attendanceStatusController');
 const attendanceController = require('../controllers/attendanceController');
+const attendanceScope = require('../middleware/attendanceScope');
 const leaveRequestController = require('../controllers/leaveRequestController');
 
 // Phase 5 Controllers
@@ -380,18 +381,25 @@ router.get('/attendance/statuses', requirePermissions('attendance_status_view'),
 router.post('/attendance/statuses', requirePermissions('attendance_status_manage'), attendanceStatusController.createAttendanceStatus);
 router.patch('/attendance/statuses/:id', requirePermissions('attendance_status_manage'), attendanceStatusController.updateAttendanceStatus);
 
-// --- Phase 3: Attendance Sessions & Marking Workspace ---
-router.get('/attendance/sessions', requirePermissions('attendance_view'), attendanceController.getAttendanceSessions);
-router.post('/attendance/sessions', requirePermissions('attendance_mark'), attendanceController.createAttendanceSession);
-router.post('/attendance/sessions/mark-bulk', requirePermissions('attendance_mark'), attendanceController.markBulkAttendance);
-router.get('/attendance/records', requirePermissions('attendance_view'), attendanceController.getAttendanceRecords);
-router.patch('/attendance/records/:id', requirePermissions('attendance_correct'), attendanceController.correctAttendanceRecord);
-router.post('/attendance/records/:id/correct', requirePermissions('attendance_correct'), attendanceController.correctAttendanceRecord);
+// --- Class Attendance Tab: scope resolution (CLASS_ATTENDANCE_TAB_ARCHITECTURE.md) ---
+// Resolves whether the caller sees ALL sections (admin-level `attendance_view_all`)
+// or is locked to their own homeroom section(s) — attached to every route below.
+router.get('/attendance/my-scope', requirePermissions('attendance_view'), attendanceScope, attendanceController.getMyScope);
+router.get('/attendance/holiday-check', requirePermissions('attendance_view'), attendanceController.checkHoliday);
 
-// --- Phase 3: Attendance Summaries & Reports ---
-router.get('/attendance/students/:studentId/summary', requirePermissions('attendance_view'), attendanceController.getStudentAttendanceSummary);
-router.get('/attendance/sections/:sectionId/summary', requirePermissions('attendance_view'), attendanceController.getSectionAttendanceSummary);
-router.get('/attendance/summary', requirePermissions('attendance_report'), attendanceController.getSchoolAttendanceSummary);
+// --- Attendance: single-collection (AttendanceDay) model ---
+// getRoster covers both a single section and the combined all-sections admin
+// view (sectionId omitted, narrowed by applyScopeToFilter) in one call.
+router.get('/attendance/roster', requirePermissions('attendance_view'), attendanceScope, attendanceController.getRoster);
+router.get('/attendance/students/:studentId/day', requirePermissions('attendance_view'), attendanceScope, attendanceController.getStudentDay);
+router.post('/attendance/mark-bulk', requirePermissions('attendance_mark'), attendanceScope, attendanceController.markBulkAttendance);
+router.patch('/attendance/students/:studentId/day/:date/periods/:periodEntryId', requirePermissions('attendance_correct'), attendanceScope, attendanceController.correctPeriodEntry);
+router.get('/attendance/records/:dayDocId/periods/:periodEntryId/audit', requirePermissions('attendance_view'), attendanceScope, attendanceController.getPeriodAuditHistory);
+router.patch('/attendance/sections/:sectionId/lock', requirePermissions('attendance_correct'), attendanceScope, attendanceController.setSectionLock);
+
+// --- Attendance: Summaries & Reports ---
+router.get('/attendance/students/:studentId/summary', requirePermissions('attendance_view'), attendanceController.getStudentSummary);
+router.get('/attendance/summary', requirePermissions('attendance_report'), attendanceController.getSchoolSummary);
 
 // --- Phase 3: Leave Applications ---
 router.get('/leave-requests', requirePermissions('leave_view'), leaveRequestController.getLeaveRequests);

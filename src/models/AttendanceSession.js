@@ -19,8 +19,18 @@ const attendanceSessionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-attendanceSessionSchema.index({ schoolId: 1, academicYearId: 1, date: 1, sectionId: 1, attendanceType: 1 });
+// Unique (excluding ARCHIVED sessions, via partialFilterExpression so an
+// archived slot can be re-created) — closes the race where two concurrent
+// first-time mark-bulk/createAttendanceSession calls for the same
+// section/day/period/type could each create their own session, and
+// (downstream) duplicate per-student records. Includes periodId, which the
+// previous non-unique version of this index omitted. attendanceController.js
+// now upserts against this exact key via findOneAndUpdate.
+attendanceSessionSchema.index(
+  { schoolId: 1, academicYearId: 1, date: 1, sectionId: 1, periodId: 1, attendanceType: 1 },
+  { unique: true, partialFilterExpression: { status: { $ne: 'ARCHIVED' } } }
+);
 // Session lookup also queries by gradeId for daily summaries
 attendanceSessionSchema.index({ schoolId: 1, gradeId: 1, date: 1 });
 
-module.exports = mongoose.model('AttendanceSession', attendanceSessionSchema);
+module.exports = mongoose.model('AttendanceSession', attendanceSessionSchema, 'attendanceSessions');

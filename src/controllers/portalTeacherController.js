@@ -1,6 +1,6 @@
 const TeacherAssignment = require('../models/TeacherAssignment');
 const Timetable = require('../models/Timetable');
-const AttendanceSession = require('../models/AttendanceSession');
+const AttendanceDay = require('../models/AttendanceDay');
 const Enrollment = require('../models/Enrollment');
 const Student = require('../models/Student');
 const Announcement = require('../models/Announcement');
@@ -181,10 +181,10 @@ const getTeacherDashboardData = async (req, res, next) => {
 
     // 3. Real attendance sessions count
     const completedSessions = teacherId
-      ? await AttendanceSession.find({
+      ? await AttendanceDay.find({
         schoolId,
-        teacherId,
-        status: { $in: ['SUBMITTED', 'LOCKED'] },
+        'periods.teacherId': teacherId,
+        'periods.sessionStatus': { $in: ['SUBMITTED', 'LOCKED'] },
         date: {
           $gte: new Date(new Date().setHours(0, 0, 0, 0)),
           $lt: new Date(new Date().setHours(23, 59, 59, 999)),

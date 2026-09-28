@@ -1,6 +1,7 @@
 const Student = require('../models/Student');
 const Enrollment = require('../models/Enrollment');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceDay = require('../models/AttendanceDay');
+const { flattenPeriodsToRecords } = require('../services/attendanceDayService');
 const Timetable = require('../models/Timetable');
 const Announcement = require('../models/Announcement');
 const Notification = require('../models/Notification');
@@ -49,12 +50,14 @@ const getStudentDashboardForStudent = async (req, res, student) => {
   const sectionId = enrollment?.sectionId?._id;
   const sectionName = enrollment?.sectionId?.name || 'A';
 
-  // 1. Real Attendance Records & Metrics
-  const records = await AttendanceRecord.find({ schoolId, studentId: sId })
-    .populate('statusId', 'code name category')
+  // 1. Real Attendance Records & Metrics — last 30 days, flattened to one
+  // row per marked period (see attendanceDayService.flattenPeriodsToRecords).
+  const attendanceDays = await AttendanceDay.find({ schoolId, studentId: sId })
+    .populate('periods.statusId', 'code name category')
     .sort({ date: -1 })
     .limit(30)
     .lean();
+  const records = flattenPeriodsToRecords(attendanceDays);
 
   const totalDays = records.length;
   const presentCount = records.filter((r) => r.statusId?.code === 'PRESENT').length;

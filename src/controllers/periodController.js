@@ -1,6 +1,6 @@
 const Period = require('../models/Period');
 const Timetable = require('../models/Timetable');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceDay = require('../models/AttendanceDay');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
@@ -212,7 +212,7 @@ const deletePeriod = async (req, res, next) => {
 
     const [hasTimetable, hasAttendance] = await Promise.all([
       Timetable.countDocuments({ schoolId, periodId: id, status: { $ne: 'ARCHIVED' } }),
-      AttendanceRecord.countDocuments({ schoolId, periodId: id }),
+      AttendanceDay.countDocuments({ schoolId, 'periods.periodId': id }),
     ]);
 
     if (hasTimetable > 0 || hasAttendance > 0) {

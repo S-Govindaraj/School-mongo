@@ -4,6 +4,7 @@ const Student = require('../models/Student');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { syncApprovedLeaveToAttendance } = require('../services/attendanceLeaveSyncService');
 
 const getLeaveRequests = async (req, res, next) => {
   try {
@@ -14,9 +15,12 @@ const getLeaveRequests = async (req, res, next) => {
     if (studentId) query.studentId = studentId;
     if (status && status !== 'ALL') query.status = status;
     if (startDate || endDate) {
-      query.startDate = {};
-      if (startDate) query.startDate.$gte = new Date(startDate);
-      if (endDate) query.startDate.$lte = new Date(endDate);
+      // Fixed: this filtered on `startDate`, a field the LeaveRequest model
+      // doesn't have (it's `fromDate`/`toDate`) — the date-range filter
+      // silently matched nothing.
+      query.fromDate = {};
+      if (startDate) query.fromDate.$gte = new Date(startDate);
+      if (endDate) query.fromDate.$lte = new Date(endDate);
     }
 
     const pageNum = parseInt(page, 10) || 1;
@@ -176,7 +180,16 @@ const updateLeaveStatus = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, leave, `Leave request ${status.toLowerCase()} successfully`);
+    // Sync onto attendance so an approved leave shows up as LEAVE/EXCUSED
+    // for every covered day, instead of leaving marking and leave as two
+    // disconnected systems (ATTENDANCE_REDESIGN.md finding #18). Best
+    // -effort: a sync failure is logged but never fails the approval itself.
+    let attendanceSync = null;
+    if (status === 'APPROVED') {
+      attendanceSync = await syncApprovedLeaveToAttendance(leave, schoolId, req.user?._id);
+    }
+
+    return successResponse(res, { ...leave.toObject(), attendanceSync }, `Leave request ${status.toLowerCase()} successfully`);
   } catch (error) {
     next(error);
   }

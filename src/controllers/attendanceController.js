@@ -1,212 +1,371 @@
-const AttendanceSession = require('../models/AttendanceSession');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const mongoose = require('mongoose');
+const AttendanceDay = require('../models/AttendanceDay');
 const AttendanceStatus = require('../models/AttendanceStatus');
 const AttendanceAudit = require('../models/AttendanceAudit');
 const Enrollment = require('../models/Enrollment');
 const Student = require('../models/Student');
 const AcademicYear = require('../models/AcademicYear');
+const Holiday = require('../models/Holiday');
 const { successResponse } = require('../utils/response');
-const { NotFoundError, ValidationError } = require('../utils/errors');
+const { NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { withTransactionOrFallback } = require('../utils/withTransaction');
+const { assertSectionInScope, applyScopeToFilter } = require('../services/attendanceScopeService');
+const { createAbsenceNotifications } = require('../services/attendanceNotificationHelper');
+const { upsertPeriodEntry, getAttendanceDay } = require('../services/attendanceDayService');
 
-const getAttendanceSessions = async (req, res, next) => {
+/**
+ * Single-collection attendance model: one AttendanceDay document per
+ * student per calendar day, holding a `periods` array (DAILY schools use a
+ * single synthetic entry with periodId: null). Replaces the old
+ * AttendanceSession + AttendanceRecord two-collection design — see
+ * src/models/AttendanceDay.js for the schema rationale.
+ */
+
+const checkHoliday = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { date, gradeId, sectionId, attendanceType = 'DAILY', page = 1, limit = 50 } = req.query;
+    const { date } = req.query;
+    if (!date) throw new ValidationError('date is required (YYYY-MM-DD).');
 
-    const query = { schoolId, status: { $ne: 'ARCHIVED' } };
-    if (date) query.date = new Date(date);
-    if (gradeId) query.gradeId = gradeId;
-    if (sectionId) query.sectionId = sectionId;
-    if (attendanceType) query.attendanceType = attendanceType;
+    const dateStr = new Date(date).toISOString().split('T')[0];
+    const holiday = await Holiday.findOne({ schoolId, date: dateStr, status: 'ACTIVE' }).lean();
 
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 50;
-    const skip = (pageNum - 1) * limitNum;
-
-    const [totalRecords, sessions] = await Promise.all([
-      AttendanceSession.countDocuments(query),
-      AttendanceSession.find(query)
-        .populate('academicYearId', 'name code')
-        .populate('gradeId', 'name code')
-        .populate('sectionId', 'name code room')
-        .populate('periodId', 'name code sequence startTime endTime')
-        .populate('subjectId', 'name code shortName')
-        .populate('teacherId', 'firstName lastName employeeId')
-        .sort({ date: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-    ]);
-
-    const formatted = sessions.map((s) => ({ ...s, id: String(s._id) }));
-    return res.status(200).json({
-      success: true,
-      data: formatted,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        totalRecords,
-        totalPages: Math.ceil(totalRecords / limitNum) || 1,
-      },
-    });
+    return successResponse(
+      res,
+      holiday ? { isHoliday: true, holiday: { name: holiday.name, holidayType: holiday.holidayType } } : { isHoliday: false, holiday: null },
+      'Holiday check complete'
+    );
   } catch (error) {
     next(error);
   }
 };
 
-const createAttendanceSession = async (req, res, next) => {
+const getMyScope = async (req, res, next) => {
+  try {
+    return successResponse(res, req.attendanceScope, 'Attendance scope resolved');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Audit trail for one specific period entry within one student's day. */
+const getPeriodAuditHistory = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, date, gradeId, sectionId, periodId, subjectId, teacherId, attendanceType = 'DAILY' } = req.body;
+    const { dayDocId, periodEntryId } = req.params;
 
-    const sessionDate = new Date(date);
+    const day = await AttendanceDay.findOne({ _id: dayDocId, schoolId }).lean();
+    if (!day) throw new NotFoundError('Attendance record not found');
 
-    // Find existing session or create new
-    let session = await AttendanceSession.findOne({
-      schoolId,
-      academicYearId,
-      date: sessionDate,
-      sectionId,
-      periodId: periodId || null,
-      attendanceType,
-      status: { $ne: 'ARCHIVED' },
-    });
+    assertSectionInScope(req.attendanceScope, day.sectionId);
 
-    if (!session) {
-      session = await AttendanceSession.create({
-        schoolId,
-        academicYearId,
-        date: sessionDate,
-        gradeId,
-        sectionId,
-        periodId: periodId || null,
-        subjectId: subjectId || null,
-        teacherId: teacherId || null,
-        attendanceType,
-        status: 'SUBMITTED',
-        startedAt: new Date(),
-        completedAt: new Date(),
-        markedBy: req.user?._id,
-      });
+    const history = await AttendanceAudit.find({ schoolId, attendanceDayId: dayDocId, periodEntryId })
+      .populate('previousStatusId', 'name code colorToken')
+      .populate('newStatusId', 'name code colorToken')
+      .populate('editedBy', 'name email')
+      .sort({ timestamp: -1 })
+      .lean();
+
+    return successResponse(
+      res,
+      history.map((h) => ({ ...h, id: String(h._id) })),
+      'Attendance audit history retrieved'
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Lock/unlock a whole section's day (a specific period, or the sole DAILY
+ * entry). sessionStatus lives per period-entry now, so this is an updateMany
+ * across every student's AttendanceDay doc for that section/date, not a
+ * single-document flip. Locking ALSO creates a LOCKED, unmarked placeholder
+ * entry (statusId: null) for any actively-enrolled student who has no entry
+ * yet — otherwise a "locked" day could still silently accept a brand-new
+ * first-time mark for a student nobody got to yet. Unlocking never creates
+ * placeholders (nothing to reopen for a student with no entry).
+ */
+const setSectionLock = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { sectionId } = req.params;
+    const { date, academicYearId, attendanceType = 'DAILY', periodId, locked } = req.body;
+
+    assertSectionInScope(req.attendanceScope, sectionId);
+    if (!date || !academicYearId) throw new ValidationError('date and academicYearId are required.');
+
+    const wantsUnlock = locked === false || locked === 'false';
+    if (wantsUnlock) {
+      const rolePermissions = req.user?.roleId?.permissions || [];
+      const isAdmin = rolePermissions.includes('*') || rolePermissions.includes('attendance_view_all');
+      if (!isAdmin) throw new ForbiddenError('Only an administrator can unlock attendance.');
     }
 
-    return successResponse(res, session, 'Attendance session created/retrieved', 201);
+    const normalizedPeriodId = periodId || null;
+    const targetDate = new Date(date);
+    const newStatus = wantsUnlock ? 'SUBMITTED' : 'LOCKED';
+
+    const updateResult = await AttendanceDay.updateMany(
+      {
+        schoolId,
+        sectionId,
+        date: targetDate,
+        academicYearId,
+        attendanceType,
+        periods: { $elemMatch: { periodId: normalizedPeriodId, sessionStatus: wantsUnlock ? 'LOCKED' : { $ne: 'LOCKED' } } },
+      },
+      { $set: { 'periods.$[p].sessionStatus': newStatus } },
+      { arrayFilters: [{ 'p.periodId': normalizedPeriodId }] }
+    );
+
+    let placeholdersCreated = 0;
+    if (!wantsUnlock) {
+      const activeEnrollments = await Enrollment.find({
+        schoolId, sectionId, academicYearId, status: { $in: ['ENROLLED', 'ACTIVE'] },
+      }).lean();
+
+      const coveredDays = await AttendanceDay.find({
+        schoolId, sectionId, date: targetDate, academicYearId, 'periods.periodId': normalizedPeriodId,
+      }).select('studentId').lean();
+      const coveredStudentIds = new Set(coveredDays.map((d) => String(d.studentId)));
+
+      for (const enrollment of activeEnrollments) {
+        if (coveredStudentIds.has(String(enrollment.studentId))) continue;
+        await AttendanceDay.findOneAndUpdate(
+          {
+            schoolId, studentId: enrollment.studentId, date: targetDate, academicYearId,
+            'periods.periodId': { $ne: normalizedPeriodId },
+          },
+          {
+            $setOnInsert: {
+              schoolId, academicYearId, date: targetDate, attendanceType,
+              studentId: enrollment.studentId, enrollmentId: enrollment._id,
+              gradeId: enrollment.gradeId, sectionId: enrollment.sectionId,
+            },
+            $push: { periods: { periodId: normalizedPeriodId, statusId: null, sessionStatus: 'LOCKED', source: 'SYSTEM' } },
+          },
+          { upsert: true, setDefaultsOnInsert: true }
+        );
+        placeholdersCreated++;
+      }
+    }
+
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: wantsUnlock ? 'ATTENDANCE_UNLOCK' : 'ATTENDANCE_LOCK',
+      entity: 'AttendanceDay',
+      entityId: sectionId,
+      newValues: { sectionId, date, periodId: normalizedPeriodId, sessionStatus: newStatus },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(
+      res,
+      { matchedCount: updateResult.matchedCount, modifiedCount: updateResult.modifiedCount, placeholdersCreated, sessionStatus: newStatus },
+      wantsUnlock ? 'Attendance unlocked' : 'Attendance locked'
+    );
   } catch (error) {
     next(error);
   }
 };
 
+/**
+ * The primary roster endpoint: one row per actively-enrolled student for a
+ * date/period, whether scoped to one section or (sectionId omitted, admin
+ * only — enforced by applyScopeToFilter) combined across every section a
+ * grade or the whole school. Replaces the old getAttendanceSessions +
+ * getSectionAttendanceSummary + the frontend's own client-side stitching of
+ * enrollments/sessions/records into one table.
+ */
+const getRoster = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { date, academicYearId, gradeId, sectionId, attendanceType = 'DAILY', periodId } = req.query;
+    if (!date || !academicYearId) throw new ValidationError('date and academicYearId are required.');
+
+    const targetDate = new Date(date);
+    const normalizedPeriodId = periodId || null;
+
+    const enrollmentFilter = { schoolId, academicYearId, status: { $in: ['ENROLLED', 'ACTIVE'] } };
+    if (gradeId) enrollmentFilter.gradeId = gradeId;
+    if (sectionId) enrollmentFilter.sectionId = sectionId;
+    applyScopeToFilter(enrollmentFilter, req.attendanceScope);
+
+    const enrollments = await Enrollment.find(enrollmentFilter)
+      .populate('studentId', 'firstName lastName studentNumber admissionNumber photo')
+      .populate('gradeId', 'name code')
+      .populate('sectionId', 'name code')
+      .lean();
+
+    const studentIds = enrollments.map((e) => e.studentId?._id || e.studentId);
+
+    const dayFilter = { schoolId, academicYearId, date: targetDate, attendanceType, studentId: { $in: studentIds } };
+    if (gradeId) dayFilter.gradeId = gradeId;
+    if (sectionId) dayFilter.sectionId = sectionId;
+
+    const days = studentIds.length
+      ? await AttendanceDay.find(dayFilter).populate('periods.statusId', 'name code countsAsPresent countsAsAbsent colorToken').lean()
+      : [];
+    const dayByStudent = new Map(days.map((d) => [String(d.studentId), d]));
+
+    const students = enrollments.map((e) => {
+      const student = e.studentId || {};
+      const sId = String(student._id || student.id);
+      const day = dayByStudent.get(sId);
+      const entry = day?.periods?.find((p) => String(p.periodId || '') === String(normalizedPeriodId || ''));
+      return {
+        studentId: sId,
+        enrollmentId: String(e._id),
+        dayDocId: day ? String(day._id) : null,
+        periodEntryId: entry ? String(entry._id) : null,
+        rollNumber: e.rollNumber || student.admissionNumber || '—',
+        firstName: student.firstName,
+        lastName: student.lastName,
+        photo: student.photo || null,
+        gradeId: String(e.gradeId?._id || e.gradeId || ''),
+        gradeName: e.gradeId?.name || '',
+        sectionId: String(e.sectionId?._id || e.sectionId || ''),
+        sectionName: e.sectionId?.name || '',
+        statusId: entry?.statusId?._id ? String(entry.statusId._id) : null,
+        statusCode: entry?.statusId?.code || null,
+        statusName: entry?.statusId?.name || null,
+        colorToken: entry?.statusId?.colorToken || null,
+        countsAsPresent: entry?.statusId?.countsAsPresent || false,
+        countsAsAbsent: entry?.statusId?.countsAsAbsent || false,
+        remarks: entry?.remarks || '',
+        sessionStatus: entry?.sessionStatus || null,
+      };
+    });
+
+    const markedCount = students.filter((s) => s.statusId).length;
+
+    return successResponse(
+      res,
+      {
+        date: targetDate,
+        gradeId: gradeId || null,
+        sectionId: sectionId || null,
+        periodId: normalizedPeriodId,
+        attendanceType,
+        totalStudents: students.length,
+        markedCount,
+        students,
+      },
+      'Attendance roster retrieved'
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** One student's full day — every period entry. Source for the View/Edit page. */
+const getStudentDay = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { studentId } = req.params;
+    const { date } = req.query;
+    let { academicYearId } = req.query;
+    if (!date) throw new ValidationError('date is required.');
+
+    if (!academicYearId) {
+      const activeAY = await AcademicYear.findOne({ schoolId, isCurrent: true, status: 'ACTIVE' });
+      academicYearId = activeAY?._id;
+    }
+
+    const day = await getAttendanceDay({ schoolId, studentId, date: new Date(date), academicYearId });
+    if (day) assertSectionInScope(req.attendanceScope, day.sectionId);
+
+    return successResponse(res, day ? { ...day, id: String(day._id) } : null, 'Attendance day retrieved');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * `target: 'SECTION'` (mark everyone) or `'STUDENTS'` (mark exactly the
+ * listed studentIds) — both just describe what the caller put in `records`;
+ * the write loop itself is target-agnostic. A student explicitly OMITTED
+ * from `records` on a resubmit is left untouched (never treated as
+ * "intentionally unmarked").
+ */
 const markBulkAttendance = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, date, gradeId, sectionId, periodId, attendanceType = 'DAILY', records = [] } = req.body;
+    const {
+      academicYearId, date, gradeId, sectionId, periodId, attendanceType = 'DAILY',
+      target = 'STUDENTS', records = [],
+    } = req.body;
 
-    const sessionDate = new Date(date);
+    assertSectionInScope(req.attendanceScope, sectionId);
+    if (!records.length) throw new ValidationError('At least one attendance record is required.');
 
-    // 1. Get or create session
-    let session = await AttendanceSession.findOne({
-      schoolId,
-      academicYearId,
-      date: sessionDate,
-      sectionId,
-      periodId: periodId || null,
-      attendanceType,
-      status: { $ne: 'ARCHIVED' },
-    });
+    const targetDate = new Date(date);
+    const normalizedPeriodId = periodId || null;
 
-    if (session && session.status === 'LOCKED') {
-      throw new ValidationError('This record is locked and cannot be modified.');
-    }
-
-    if (!session) {
-      session = await AttendanceSession.create({
-        schoolId,
-        academicYearId,
-        date: sessionDate,
-        gradeId,
-        sectionId,
-        periodId: periodId || null,
-        attendanceType,
-        status: 'SUBMITTED',
-        startedAt: new Date(),
-        completedAt: new Date(),
-        markedBy: req.user?._id,
-      });
-    }
-
-    // Cache attendance statuses to check required reasons
-    const allStatuses = await AttendanceStatus.find({ schoolId });
+    const allStatuses = await AttendanceStatus.find({ schoolId, status: 'ACTIVE' });
     const statusMap = new Map(allStatuses.map((s) => [String(s._id), s]));
 
-    // Pre-fetch all enrollments for the submitted students in one query (eliminates N+1)
-    const submittedStudentIds = records.map((r) => r.studentId);
+    const recordStudentIds = records.map((r) => r.studentId);
     const activeEnrollments = await Enrollment.find({
-      schoolId,
-      studentId: { $in: submittedStudentIds },
-      gradeId,
-      sectionId,
-      academicYearId,
+      schoolId, studentId: { $in: recordStudentIds }, gradeId, sectionId, academicYearId,
       status: { $in: ['ENROLLED', 'ACTIVE'] },
     });
     const enrollmentMap = new Map(activeEnrollments.map((e) => [String(e.studentId), e]));
 
-    // 2. Process records idempotently using bulkWrite
-    const bulkOps = [];
+    const newAbsences = [];
+    let writtenCount = 0;
+    let lockedCount = 0;
+
     for (const item of records) {
       const { studentId, enrollmentId, statusId, remarks } = item;
-
-      // Validate student enrollment using pre-fetched map (zero extra DB queries)
       const activeEnrollment = enrollmentMap.get(String(studentId));
       if (!activeEnrollment) {
         throw new ValidationError(`Student ${studentId} is not enrolled in this section for the selected academic year.`);
       }
 
-      // Check if status requires a reason
       const statusDoc = statusMap.get(String(statusId));
-      if (statusDoc && (statusDoc.requiresReason || ['EXCUSED', 'LEAVE'].includes(statusDoc.code))) {
+      if (!statusDoc) throw new ValidationError(`Invalid or inactive attendance status: ${statusId}.`);
+      if (statusDoc.requiresReason || ['EXCUSED', 'LEAVE'].includes(statusDoc.code)) {
         if (!remarks || !String(remarks).trim()) {
           throw new ValidationError(`A reason is required when marking attendance as ${statusDoc.name || statusDoc.code}.`);
         }
       }
 
-      bulkOps.push({
-        updateOne: {
-          filter: {
-            schoolId,
-            attendanceSessionId: session._id,
-            studentId,
-          },
-          update: {
-            $set: {
-              schoolId,
-              attendanceSessionId: session._id,
-              academicYearId,
-              studentId,
-              enrollmentId: enrollmentId || activeEnrollment._id,
-              gradeId,
-              sectionId,
-              date: sessionDate,
-              periodId: periodId || null,
-              statusId,
-              markedBy: req.user?._id,
-              markedAt: new Date(),
-              remarks: String(remarks || '').trim(),
-              source: 'BULK',
-            },
-          },
-          upsert: true,
+      const result = await upsertPeriodEntry({
+        schoolId, academicYearId, date: targetDate, attendanceType,
+        studentId, enrollmentId: enrollmentId || activeEnrollment._id, gradeId, sectionId,
+        periodId: normalizedPeriodId,
+        fields: {
+          statusId,
+          remarks: String(remarks || '').trim(),
+          markedBy: req.user?._id,
+          markedAt: new Date(),
+          source: 'BULK',
         },
       });
+
+      if (result.outcome === 'LOCKED') {
+        lockedCount++;
+        continue;
+      }
+      writtenCount++;
+      if (statusDoc.countsAsAbsent) {
+        newAbsences.push({ studentId, statusName: statusDoc.name, date: targetDate, recordId: result.dayId });
+      }
     }
 
-    if (bulkOps.length > 0) {
-      await AttendanceRecord.bulkWrite(bulkOps);
+    if (writtenCount === 0 && lockedCount > 0) {
+      throw new ValidationError('This attendance period is locked and cannot be modified.');
     }
 
-    session.status = 'SUBMITTED';
-    session.completedAt = new Date();
-    await session.save();
+    createAbsenceNotifications(schoolId, newAbsences);
 
     await logAuditEvent({
       schoolId,
@@ -214,316 +373,265 @@ const markBulkAttendance = async (req, res, next) => {
       actorName: req.user?.name,
       actorEmail: req.user?.email,
       action: 'MARK',
-      entity: 'AttendanceSession',
-      entityId: session._id.toString(),
-      details: { totalRecords: records.length, date, sectionId },
+      entity: 'AttendanceDay',
+      entityId: sectionId,
+      details: { target, count: writtenCount, lockedSkipped: lockedCount, date, sectionId, periodId: normalizedPeriodId },
       requestId: req.requestId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return successResponse(res, { sessionId: session._id, count: records.length }, 'Attendance marked successfully');
+    return successResponse(
+      res,
+      { count: writtenCount, lockedSkipped: lockedCount, date: targetDate, sectionId, periodId: normalizedPeriodId },
+      'Attendance marked successfully'
+    );
   } catch (error) {
     next(error);
   }
 };
 
-const correctAttendanceRecord = async (req, res, next) => {
+/** Corrects one period entry within one student's day. Mandatory reason, audited. */
+const correctPeriodEntry = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { id } = req.params;
-    const { newStatusId, statusId, reason } = req.body;
-
+    const { studentId, date, periodEntryId } = req.params;
+    const { newStatusId, statusId, reason, academicYearId } = req.body;
     const targetStatusId = newStatusId || statusId;
 
     if (!reason || !String(reason).trim()) {
       throw new ValidationError('A mandatory reason is required to correct attendance records.');
     }
+    if (!academicYearId) throw new ValidationError('academicYearId is required.');
 
-    const record = await AttendanceRecord.findOne({ _id: id, schoolId });
-    if (!record) throw new NotFoundError('Attendance record not found');
+    const targetDate = new Date(date);
+    const day = await AttendanceDay.findOne({ schoolId, studentId, date: targetDate, academicYearId });
+    if (!day) throw new NotFoundError('Attendance record not found');
 
-    const previousStatusId = record.statusId;
+    assertSectionInScope(req.attendanceScope, day.sectionId);
 
-    // Record audit entry
-    await AttendanceAudit.create({
-      schoolId,
-      attendanceRecordId: record._id,
-      previousStatusId,
-      newStatusId: targetStatusId,
-      reason: String(reason).trim(),
-      editedBy: req.user._id,
-      timestamp: new Date(),
-      ipAddress: req.ip,
-      requestId: req.requestId || '',
+    const entry = day.periods.id(periodEntryId);
+    if (!entry) throw new NotFoundError('Attendance period entry not found');
+    if (entry.sessionStatus === 'LOCKED') {
+      throw new ValidationError('This attendance period is locked and cannot be modified. Ask an administrator to unlock it first.');
+    }
+
+    const targetStatusDoc = await AttendanceStatus.findOne({ _id: targetStatusId, schoolId, status: 'ACTIVE' });
+    if (!targetStatusDoc) throw new ValidationError(`Invalid or inactive attendance status: ${targetStatusId}.`);
+
+    const previousStatusId = entry.statusId;
+
+    await withTransactionOrFallback(async (mongoSession) => {
+      await AttendanceAudit.create(
+        [{
+          schoolId,
+          attendanceDayId: day._id,
+          periodEntryId: entry._id,
+          previousStatusId,
+          newStatusId: targetStatusId,
+          reason: String(reason).trim(),
+          editedBy: req.user._id,
+          timestamp: new Date(),
+          ipAddress: req.ip,
+          requestId: req.requestId || '',
+        }],
+        { session: mongoSession }
+      );
+
+      entry.statusId = targetStatusId;
+      entry.remarks = `Corrected: ${String(reason).trim()}`;
+      entry.markedBy = req.user._id;
+      entry.markedAt = new Date();
+      await day.save({ session: mongoSession });
     });
 
-    // Update attendance record
-    record.statusId = targetStatusId;
-    record.remarks = `Corrected: ${String(reason).trim()}`;
-    record.markedBy = req.user._id;
-    record.markedAt = new Date();
-    await record.save();
+    if (targetStatusDoc.countsAsAbsent) {
+      createAbsenceNotifications(schoolId, [
+        { studentId: day.studentId, statusName: targetStatusDoc.name, date: day.date, recordId: day._id },
+      ]);
+    }
 
-    await logAuditEvent(req, 'ATTENDANCE_CORRECT', 'AttendanceRecord', record._id, { statusId: previousStatusId }, { statusId: targetStatusId, reason });
+    await logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'ATTENDANCE_CORRECT',
+      entity: 'AttendanceDay',
+      entityId: day._id.toString(),
+      oldValues: { statusId: previousStatusId },
+      newValues: { statusId: targetStatusId },
+      reason: String(reason).trim(),
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
-    return successResponse(res, record, 'Attendance record corrected successfully');
+    return successResponse(res, { ...day.toObject(), id: String(day._id) }, 'Attendance record corrected successfully');
   } catch (error) {
     next(error);
   }
 };
 
-const getStudentAttendanceSummary = async (req, res, next) => {
+/**
+ * Per confirmed decision: PERIOD-mode summaries roll up as a percentage over
+ * PERIOD-SLOTS (every marked period entry counted individually across the
+ * date range), not one representative "day status" — this needs no special
+ * casing for DAILY schools, since a DAILY day's single synthetic entry is
+ * just one slot.
+ */
+const getStudentSummary = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
     const { studentId } = req.params;
-    const { academicYearId } = req.query;
+    let { academicYearId } = req.query;
 
-    let targetAY = academicYearId;
-    if (!targetAY) {
+    if (!academicYearId) {
       const activeAY = await AcademicYear.findOne({ schoolId, isCurrent: true, status: 'ACTIVE' });
-      targetAY = activeAY?._id;
+      academicYearId = activeAY?._id;
     }
 
-    const records = await AttendanceRecord.find({
-      schoolId,
-      studentId,
-      academicYearId: targetAY,
-    })
-      .populate('statusId', 'name code countsAsPresent countsAsAbsent colorToken')
-      .populate('periodId', 'name sequence')
+    const days = await AttendanceDay.find({ schoolId, studentId, academicYearId })
+      .populate('periods.statusId', 'name code countsAsPresent countsAsAbsent colorToken')
+      .populate('periods.periodId', 'name sequence')
       .sort({ date: -1 })
       .lean();
 
-    const totalDays = records.length;
-    let presentCount = 0;
-    let absentCount = 0;
-    let lateCount = 0;
-    let excusedCount = 0;
+    let totalSlots = 0, presentSlots = 0, absentSlots = 0, lateSlots = 0, excusedSlots = 0;
+    const dayRows = [];
 
-    for (const r of records) {
-      if (r.statusId?.countsAsPresent) presentCount++;
-      if (r.statusId?.countsAsAbsent) absentCount++;
-      if (r.statusId?.code === 'LATE') lateCount++;
-      if (r.statusId?.code === 'EXCUSED' || r.statusId?.code === 'LEAVE') excusedCount++;
-    }
+    for (const day of days) {
+      const markedPeriods = (day.periods || []).filter((p) => p.statusId);
+      markedPeriods.forEach((p) => {
+        totalSlots++;
+        if (p.statusId?.countsAsPresent) presentSlots++;
+        if (p.statusId?.countsAsAbsent) absentSlots++;
+        if (p.statusId?.code === 'LATE') lateSlots++;
+        if (['EXCUSED', 'LEAVE'].includes(p.statusId?.code)) excusedSlots++;
+      });
 
-    const pct = totalDays > 0 ? Math.round((presentCount / totalDays) * 100) : 100;
-
-    return successResponse(res, {
-      studentId,
-      academicYearId: targetAY,
-      totalDays,
-      presentCount,
-      absentCount,
-      lateCount,
-      excusedCount,
-      attendancePercentage: pct,
-      records: records.map((r) => ({ ...r, id: String(r._id) })),
-    }, 'Student attendance summary retrieved');
-  } catch (error) {
-    next(error);
-  }
-};
-
-const getSectionAttendanceSummary = async (req, res, next) => {
-  try {
-    const schoolId = req.schoolContext?.schoolId;
-    const { sectionId } = req.params;
-    const { date } = req.query;
-
-    const targetDate = date ? new Date(date) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    const activeEnrollments = await Enrollment.find({
-      schoolId,
-      sectionId,
-      isCurrent: true,
-      status: { $ne: 'ARCHIVED' },
-    })
-      .populate('studentId', 'firstName lastName studentNumber admissionNumber photo status')
-      .lean();
-
-    const studentIds = activeEnrollments.map((e) => e.studentId?._id || e.studentId);
-
-    const records = await AttendanceRecord.find({
-      schoolId,
-      sectionId,
-      date: targetDate,
-      studentId: { $in: studentIds },
-    })
-      .populate('statusId', 'name code countsAsPresent countsAsAbsent colorToken')
-      .lean();
-
-    const recordMap = {};
-    for (const r of records) {
-      recordMap[String(r.studentId)] = r;
-    }
-
-    const studentAttendanceList = activeEnrollments.map((e) => {
-      const student = e.studentId || {};
-      const record = recordMap[String(student._id || student.id)];
-
-      return {
-        studentId: String(student._id || student.id),
-        studentNumber: student.studentNumber,
-        admissionNumber: student.admissionNumber,
-        firstName: student.firstName,
-        lastName: student.lastName,
-        photo: student.photo,
-        enrollmentId: String(e._id || e.id),
-        gradeId: String(e.gradeId),
-        sectionId: String(e.sectionId),
-        recordId: record ? String(record._id) : null,
-        statusId: record?.statusId?._id || null,
-        statusCode: record?.statusId?.code || 'UNMARKED',
-        statusName: record?.statusId?.name || 'Unmarked',
-        colorToken: record?.statusId?.colorToken || 'gray',
-        remarks: record?.remarks || '',
-      };
-    });
-
-    return successResponse(res, {
-      sectionId,
-      date: targetDate,
-      totalStudents: activeEnrollments.length,
-      markedCount: records.length,
-      students: studentAttendanceList,
-    }, 'Section attendance list retrieved');
-  } catch (error) {
-    next(error);
-  }
-};
-
-const getSchoolAttendanceSummary = async (req, res, next) => {
-  try {
-    const schoolId = req.schoolContext?.schoolId;
-    const { date } = req.query;
-
-    const targetDate = date ? new Date(date) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    const [totalStudents, todayRecords] = await Promise.all([
-      Student.countDocuments({ schoolId, status: 'ACTIVE' }),
-      AttendanceRecord.find({ schoolId, date: targetDate })
-        .populate('gradeId', 'name')
-        .populate('sectionId', 'name')
-        .populate('statusId', 'code countsAsPresent countsAsAbsent')
-        .lean(),
-    ]);
-
-    let presentToday = 0;
-    let absentToday = 0;
-    let lateToday = 0;
-
-    const sectionMap = {};
-    for (const r of todayRecords) {
-      if (r.statusId?.countsAsPresent) presentToday++;
-      if (r.statusId?.countsAsAbsent) absentToday++;
-      if (r.statusId?.code === 'LATE') lateToday++;
-
-      const secKey = String(r.sectionId?._id || r.sectionId || '');
-      if (secKey) {
-        if (!sectionMap[secKey]) {
-          sectionMap[secKey] = {
-            gradeName: r.gradeId?.name || 'Grade',
-            sectionName: r.sectionId?.name || 'Section',
-            total: 0,
-            present: 0,
-            absent: 0,
-          };
-        }
-        sectionMap[secKey].total++;
-        if (r.statusId?.countsAsPresent) sectionMap[secKey].present++;
-        if (r.statusId?.countsAsAbsent) sectionMap[secKey].absent++;
+      if (markedPeriods.length > 0) {
+        dayRows.push({
+          id: String(day._id),
+          date: day.date,
+          attendanceType: day.attendanceType,
+          periods: markedPeriods.map((p) => ({
+            id: String(p._id),
+            periodId: p.periodId?._id || null,
+            periodName: p.periodId?.name || null,
+            statusId: p.statusId?._id,
+            statusName: p.statusId?.name,
+            statusCode: p.statusId?.code,
+            colorToken: p.statusId?.colorToken,
+            remarks: p.remarks,
+            sessionStatus: p.sessionStatus,
+          })),
+        });
       }
     }
 
-    const sections = Object.values(sectionMap).map((s) => ({
-      ...s,
-      percentage: s.total > 0 ? Math.round((s.present / s.total) * 100) : 0,
-    }));
+    const pct = totalSlots > 0 ? Math.round((presentSlots / totalSlots) * 100) : 100;
 
-    const pct = totalStudents > 0 && todayRecords.length > 0
-      ? Math.round((presentToday / todayRecords.length) * 100)
-      : 100;
-
-    return successResponse(res, {
-      totalStudents,
-      totalRecords: todayRecords.length,
-      markedToday: todayRecords.length,
-      presentToday,
-      presentCount: presentToday,
-      absentToday,
-      absentCount: absentToday,
-      lateToday,
-      lateCount: lateToday,
-      attendancePercentage: pct,
-      sections,
-    }, 'School attendance summary retrieved');
+    return successResponse(
+      res,
+      {
+        studentId,
+        academicYearId,
+        totalDays: dayRows.length,
+        totalSlots, presentSlots, absentSlots, lateSlots, excusedSlots,
+        attendancePercentage: pct,
+        days: dayRows,
+      },
+      'Student attendance summary retrieved'
+    );
   } catch (error) {
     next(error);
   }
 };
 
-const getAttendanceRecords = async (req, res, next) => {
+const getSchoolSummary = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { attendanceSessionId, date, studentId, gradeId, sectionId, page = 1, limit = 50 } = req.query;
+    const { date } = req.query;
 
-    const query = { schoolId };
-    if (attendanceSessionId) query.attendanceSessionId = attendanceSessionId;
-    if (date) {
-      const d = new Date(date);
-      const startOfDay = new Date(d.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(d.setHours(23, 59, 59, 999));
-      query.date = { $gte: startOfDay, $lte: endOfDay };
-    }
-    if (studentId) query.studentId = studentId;
-    if (gradeId) query.gradeId = gradeId;
-    if (sectionId) query.sectionId = sectionId;
+    const targetDate = date ? new Date(date) : new Date();
+    const startOfDay = new Date(targetDate);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setUTCHours(23, 59, 59, 999);
 
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 50;
-    const skip = (pageNum - 1) * limitNum;
+    const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
 
-    const [totalRecords, records] = await Promise.all([
-      AttendanceRecord.countDocuments(query),
-      AttendanceRecord.find(query)
-        .populate('studentId', 'firstName lastName studentNumber admissionNumber')
-        .populate('gradeId', 'name code')
-        .populate('sectionId', 'name code')
-        .populate('statusId', 'name code countsAsPresent countsAsAbsent colorToken')
-        .populate('periodId', 'name startTime endTime')
-        .sort({ date: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
+    const [totalStudents, agg] = await Promise.all([
+      Student.countDocuments({ schoolId, status: 'ACTIVE' }),
+      AttendanceDay.aggregate([
+        { $match: { schoolId: schoolObjectId, date: { $gte: startOfDay, $lte: endOfDay } } },
+        { $unwind: '$periods' },
+        { $match: { 'periods.statusId': { $ne: null } } },
+        { $lookup: { from: 'attendanceStatuses', localField: 'periods.statusId', foreignField: '_id', as: 'status' } },
+        { $unwind: { path: '$status', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'grades', localField: 'gradeId', foreignField: '_id', as: 'grade' } },
+        { $unwind: { path: '$grade', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'sections', localField: 'sectionId', foreignField: '_id', as: 'section' } },
+        { $unwind: { path: '$section', preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: '$sectionId',
+            gradeName: { $first: '$grade.name' },
+            sectionName: { $first: '$section.name' },
+            total: { $sum: 1 },
+            present: { $sum: { $cond: [{ $eq: ['$status.countsAsPresent', true] }, 1, 0] } },
+            absent: { $sum: { $cond: [{ $eq: ['$status.countsAsAbsent', true] }, 1, 0] } },
+            late: { $sum: { $cond: [{ $eq: ['$status.code', 'LATE'] }, 1, 0] } },
+          },
+        },
+      ]),
     ]);
 
-    const formatted = records.map((r) => ({ ...r, id: String(r._id) }));
-    return res.status(200).json({
-      success: true,
-      data: formatted,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        totalRecords,
-        totalPages: Math.ceil(totalRecords / limitNum) || 1,
-      },
+    let presentToday = 0, absentToday = 0, lateToday = 0, totalRecords = 0;
+    const sections = agg.map((s) => {
+      presentToday += s.present;
+      absentToday += s.absent;
+      lateToday += s.late;
+      totalRecords += s.total;
+      return {
+        gradeName: s.gradeName || 'Grade',
+        sectionName: s.sectionName || 'Section',
+        total: s.total, present: s.present, absent: s.absent,
+        percentage: s.total > 0 ? Math.round((s.present / s.total) * 100) : 0,
+      };
     });
+
+    const pct = totalRecords > 0 ? Math.round((presentToday / totalRecords) * 100) : 100;
+
+    return successResponse(
+      res,
+      {
+        totalStudents,
+        totalRecords,
+        markedToday: totalRecords,
+        presentToday, presentCount: presentToday,
+        absentToday, absentCount: absentToday,
+        lateToday, lateCount: lateToday,
+        attendancePercentage: pct,
+        sections,
+      },
+      'School attendance summary retrieved'
+    );
   } catch (error) {
     next(error);
   }
 };
 
 module.exports = {
-  getAttendanceSessions,
-  createAttendanceSession,
+  checkHoliday,
+  getMyScope,
+  getPeriodAuditHistory,
+  setSectionLock,
+  getRoster,
+  getStudentDay,
   markBulkAttendance,
-  getAttendanceRecords,
-  correctAttendanceRecord,
-  getStudentAttendanceSummary,
-  getSectionAttendanceSummary,
-  getSchoolAttendanceSummary,
+  correctPeriodEntry,
+  getStudentSummary,
+  getSchoolSummary,
 };

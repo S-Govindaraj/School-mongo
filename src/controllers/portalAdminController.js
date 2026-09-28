@@ -1,7 +1,7 @@
 const Student = require('../models/Student');
 const Staff = require('../models/Staff');
 const Admission = require('../models/Admission');
-const AttendanceSession = require('../models/AttendanceSession');
+const AttendanceDay = require('../models/AttendanceDay');
 const Invoice = require('../models/Invoice');
 const Announcement = require('../models/Announcement');
 const Notification = require('../models/Notification');
@@ -18,7 +18,7 @@ const getAdminDashboardData = async (req, res, next) => {
       studentCount,
       staffCount,
       pendingAdmissions,
-      todayAttendanceSessions,
+      studentsMarkedToday,
       financialStats,
       recentAnnouncements,
       unreadNotifications
@@ -26,7 +26,12 @@ const getAdminDashboardData = async (req, res, next) => {
       Student.countDocuments({ schoolId, status: 'ACTIVE' }),
       Staff.countDocuments({ schoolId, status: 'ACTIVE' }),
       Admission.countDocuments({ schoolId, status: 'PENDING' }),
-      AttendanceSession.countDocuments({ schoolId, date: { $gte: startOfToday } }),
+      // Relabeled from "todayAttendanceSessions": under the single-collection
+      // model this counts STUDENTS with any attendance activity today (one
+      // doc per student per day), not class sessions started — a materially
+      // different number than before, so it gets a new name rather than
+      // silently changing what the old key meant.
+      AttendanceDay.countDocuments({ schoolId, date: { $gte: startOfToday } }),
       Invoice.aggregate([
         { $match: { schoolId, status: { $ne: 'CANCELLED' } } },
         {
@@ -51,7 +56,7 @@ const getAdminDashboardData = async (req, res, next) => {
         totalStudents: studentCount,
         totalStaff: staffCount,
         pendingAdmissions,
-        todayAttendanceSessions,
+        studentsMarkedToday,
         totalBilled: fin.totalBilled,
         totalCollected: fin.totalCollected,
         totalOutstanding: fin.totalOutstanding,

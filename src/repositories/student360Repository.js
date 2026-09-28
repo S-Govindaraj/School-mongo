@@ -3,7 +3,8 @@ const StudentGuardian = require('../models/StudentGuardian');
 const Enrollment = require('../models/Enrollment');
 const AcademicHistory = require('../models/AcademicHistory');
 const AcademicYear = require('../models/AcademicYear');
-const AttendanceRecord = require('../models/AttendanceRecord');
+const AttendanceDay = require('../models/AttendanceDay');
+const { flattenPeriodsToRecords } = require('../services/attendanceDayService');
 const ExamResult = require('../models/ExamResult');
 const Invoice = require('../models/Invoice');
 const FeeConcession = require('../models/FeeConcession');
@@ -122,14 +123,15 @@ const getClassTeacher = async (schoolId, academicYearId, gradeId, sectionId) => 
   return null;
 };
 
-const getAttendanceRecords = (schoolId, studentId, academicYearId) => {
+const getAttendanceRecords = async (schoolId, studentId, academicYearId) => {
   const query = { schoolId, studentId };
   if (academicYearId) query.academicYearId = academicYearId;
-  return AttendanceRecord.find(query)
-    .populate('statusId', 'name code countsAsPresent countsAsAbsent colorToken')
-    .populate('periodId', 'name sequence')
+  const days = await AttendanceDay.find(query)
+    .populate('periods.statusId', 'name code countsAsPresent countsAsAbsent colorToken')
+    .populate('periods.periodId', 'name sequence')
     .sort({ date: -1 })
     .lean();
+  return flattenPeriodsToRecords(days);
 };
 
 const getExamResults = (schoolId, studentId, academicYearId) => {
