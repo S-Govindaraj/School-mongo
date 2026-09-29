@@ -97,6 +97,7 @@ const timetableGeneratorDraftController = require('../controllers/timetableGener
 const attendanceStatusController = require('../controllers/attendanceStatusController');
 const attendanceController = require('../controllers/attendanceController');
 const attendanceScope = require('../middleware/attendanceScope');
+const staffAccessScope = require('../middleware/staffAccessScope');
 const leaveRequestController = require('../controllers/leaveRequestController');
 
 // Phase 5 Controllers
@@ -115,6 +116,7 @@ const financeDashboardController = require('../controllers/financeDashboardContr
 const errorLogController = require('../controllers/errorLogController');
 const departmentController = require('../controllers/departmentController');
 const qualificationController = require('../controllers/qualificationController');
+const designationController = require('../controllers/designationController');
 
 // Client-side error reporting (accepts optional auth so pre-login & unhandled frontend errors are captured)
 router.post('/error-logs/client', optionalAuthenticate, errorLogController.recordClientError);
@@ -132,7 +134,7 @@ router.post('/campuses/:id/restore', requirePermissions('campus_manage'), school
 router.delete('/campuses/:id', requirePermissions('campus_manage'), schoolController.deleteCampus);
 
 // --- Academic Years ---
-router.get('/academic-years', requirePermissions('academic_year_view'), academicYearController.getAcademicYears);
+router.get('/academic-years', academicYearController.getAcademicYears);
 router.get('/academic-years/current', requirePermissions('academic_year_view'), academicYearController.getCurrentAcademicYear);
 router.post('/academic-years', requirePermissions('academic_year_create'), validate(academicYearSchema), academicYearController.createAcademicYear);
 router.patch('/academic-years/:id', requirePermissions('academic_year_edit'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
@@ -142,7 +144,7 @@ router.post('/academic-years/:id/restore', requirePermissions('academic_year_act
 router.delete('/academic-years/:id', requirePermissions('academic_year_inactive'), academicYearController.deleteAcademicYear);
 
 // --- Academic Terms ---
-router.get('/academic-terms', requirePermissions('academic_term_view'), academicTermController.getAcademicTerms);
+router.get('/academic-terms', academicTermController.getAcademicTerms);
 router.post('/academic-terms', requirePermissions('academic_term_create'), validate(academicTermSchema), academicTermController.createAcademicTerm);
 router.patch('/academic-terms/:id', requirePermissions('academic_term_edit'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
 router.put('/academic-terms/:id', requirePermissions('academic_term_edit'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
@@ -150,7 +152,7 @@ router.post('/academic-terms/:id/restore', requirePermissions('academic_term_act
 router.delete('/academic-terms/:id', requirePermissions('academic_term_inactive'), academicTermController.deleteAcademicTerm);
 
 // --- Grades / Classes ---
-router.get('/grades', requirePermissions('grade_view'), gradeController.getGrades);
+router.get('/grades', gradeController.getGrades);
 router.post('/grades', requirePermissions('grade_create'), validate(gradeSchema), gradeController.createGrade);
 router.patch('/grades/:id', requirePermissions('grade_edit'), validate(updateGradeSchema), gradeController.updateGrade);
 router.put('/grades/:id', requirePermissions('grade_edit'), validate(updateGradeSchema), gradeController.updateGrade);
@@ -158,7 +160,7 @@ router.post('/grades/:id/restore', requirePermissions('grade_active'), gradeCont
 router.delete('/grades/:id', requirePermissions('grade_inactive'), gradeController.deleteGrade);
 
 // --- Sections ---
-router.get('/sections', requirePermissions('section_view'), sectionController.getSections);
+router.get('/sections', sectionController.getSections);
 router.post('/sections', requirePermissions('section_create'), validate(sectionSchema), sectionController.createSection);
 router.patch('/sections/:id', requirePermissions('section_edit'), validate(updateSectionSchema), sectionController.updateSection);
 router.put('/sections/:id', requirePermissions('section_edit'), validate(updateSectionSchema), sectionController.updateSection);
@@ -166,7 +168,7 @@ router.post('/sections/:id/restore', requirePermissions('section_active'), secti
 router.delete('/sections/:id', requirePermissions('section_inactive'), sectionController.deleteSection);
 
 // --- Master Subjects ---
-router.get('/subjects', requirePermissions('subject_view'), subjectController.getSubjects);
+router.get('/subjects', subjectController.getSubjects);
 router.post('/subjects', requirePermissions('subject_create'), validate(subjectSchema), subjectController.createSubject);
 router.patch('/subjects/:id', requirePermissions('subject_edit'), validate(updateSubjectSchema), subjectController.updateSubject);
 router.put('/subjects/:id', requirePermissions('subject_edit'), validate(updateSubjectSchema), subjectController.updateSubject);
@@ -183,27 +185,34 @@ router.post('/class-subjects/:id/restore', requirePermissions('class_subject_edi
 router.delete('/class-subjects/:id', requirePermissions('class_subject_edit'), classSubjectController.deleteClassSubject);
 
 // --- Staff & Teachers ---
-router.get('/staff', requirePermissions('staff_view'), staffController.getStaff);
-router.get('/staff/:id', requirePermissions('staff_view'), staffController.getStaffById);
+router.get('/staff', staffAccessScope, staffController.getStaff);
+router.get('/staff/:id', requirePermissions('staff_view'), staffAccessScope, staffController.getStaffById);
 router.post('/staff', requirePermissions('staff_create'), validate(staffSchema), staffController.createStaff);
-router.patch('/staff/:id', requirePermissions('staff_edit'), validate(updateStaffSchema), staffController.updateStaff);
-router.put('/staff/:id', requirePermissions('staff_edit'), validate(updateStaffSchema), staffController.updateStaff);
-router.post('/staff/:id/restore', requirePermissions('staff_active'), staffController.restoreStaff);
-router.delete('/staff/:id', requirePermissions('staff_inactive'), staffController.deleteStaff);
+router.patch('/staff/:id', requirePermissions('staff_edit'), staffAccessScope, validate(updateStaffSchema), staffController.updateStaff);
+router.put('/staff/:id', requirePermissions('staff_edit'), staffAccessScope, validate(updateStaffSchema), staffController.updateStaff);
+router.post('/staff/:id/restore', requirePermissions('staff_active'), staffAccessScope, staffController.restoreStaff);
+router.delete('/staff/:id', requirePermissions('staff_inactive'), staffAccessScope, staffController.deleteStaff);
 
 // --- Departments & Qualifications ---
 router.get('/departments', departmentController.getDepartments);
-router.get('/departments/:id', departmentController.getDepartmentById);
-router.post('/departments', departmentController.createDepartment);
-router.patch('/departments/:id', departmentController.updateDepartment);
-router.put('/departments/:id', departmentController.updateDepartment);
-router.delete('/departments/:id', departmentController.deleteDepartment);
+router.get('/departments/:id', requirePermissions('department_view'), departmentController.getDepartmentById);
+router.post('/departments', requirePermissions('department_manage'), departmentController.createDepartment);
+router.patch('/departments/:id', requirePermissions('department_manage'), departmentController.updateDepartment);
+router.put('/departments/:id', requirePermissions('department_manage'), departmentController.updateDepartment);
+router.delete('/departments/:id', requirePermissions('department_manage'), departmentController.deleteDepartment);
 
 router.get('/qualifications', qualificationController.getQualifications);
-router.get('/qualifications/:id', qualificationController.getQualificationById);
-router.post('/qualifications', qualificationController.createQualification);
-router.patch('/qualifications/:id', qualificationController.updateQualification);
-router.put('/qualifications/:id', qualificationController.updateQualification);
+router.get('/qualifications/:id', requirePermissions('qualification_view'), qualificationController.getQualificationById);
+router.post('/qualifications', requirePermissions('qualification_manage'), qualificationController.createQualification);
+router.patch('/qualifications/:id', requirePermissions('qualification_manage'), qualificationController.updateQualification);
+router.put('/qualifications/:id', requirePermissions('qualification_manage'), qualificationController.updateQualification);
+
+router.get('/designations', designationController.getDesignations);
+router.get('/designations/:id', requirePermissions('designation_view'), designationController.getDesignationById);
+router.post('/designations', requirePermissions('designation_manage'), designationController.createDesignation);
+router.patch('/designations/:id', requirePermissions('designation_manage'), designationController.updateDesignation);
+router.put('/designations/:id', requirePermissions('designation_manage'), designationController.updateDesignation);
+router.delete('/designations/:id', requirePermissions('designation_manage'), designationController.deleteDesignation);
 
 // --- Teacher Assignments ---
 router.get('/teacher-assignments', requirePermissions('teacher_assignment_view'), teacherAssignmentController.getTeacherAssignments);
@@ -254,13 +263,13 @@ router.post('/corrections/:id/approve', requirePermissions('exam_correction_appr
 router.post('/corrections/:id/reject', requirePermissions('exam_correction_approve'), validate(resultCorrectionRejectSchema), resultCorrectionController.rejectCorrection);
 
 // --- Student 360 ---
-router.get('/students', requirePermissions('student_view'), studentController.getStudents);
-router.get('/students/:id', requirePermissions('student_view'), studentController.getStudentById);
+router.get('/students', requirePermissions('student_view'), staffAccessScope, studentController.getStudents);
+router.get('/students/:id', requirePermissions('student_view'), staffAccessScope, studentController.getStudentById);
 router.post('/students', requirePermissions('student_create'), validate(studentSchema), studentController.createStudent);
-router.patch('/students/:id', requirePermissions('student_update'), validate(updateStudentSchema), studentController.updateStudent);
-router.patch('/students/:id/status', requirePermissions('student_status_change'), validate(studentStatusSchema), studentController.updateStudentStatus);
-router.post('/students/:id/restore', requirePermissions('student_archive'), studentController.restoreStudent);
-router.delete('/students/:id', requirePermissions('student_archive'), studentController.deleteStudent);
+router.patch('/students/:id', requirePermissions('student_update'), staffAccessScope, validate(updateStudentSchema), studentController.updateStudent);
+router.patch('/students/:id/status', requirePermissions('student_status_change'), staffAccessScope, validate(studentStatusSchema), studentController.updateStudentStatus);
+router.post('/students/:id/restore', requirePermissions('student_archive'), staffAccessScope, studentController.restoreStudent);
+router.delete('/students/:id', requirePermissions('student_archive'), staffAccessScope, studentController.deleteStudent);
 
 // --- Student 360 profile tabs ---
 router.get('/students/:studentId/360/overview', requirePermissions('student_view'), student360Controller.getOverview);
@@ -283,36 +292,36 @@ router.get('/students/:studentId/360/discipline', requirePermissions('student_vi
 router.get('/students/:studentId/360/medical', requirePermissions('student_view', 'medical_view'), student360Controller.getMedical);
 
 // --- Guardians ---
-router.get('/guardians', requirePermissions('guardian_view'), guardianController.getGuardians);
-router.get('/guardians/:id', requirePermissions('guardian_view'), guardianController.getGuardianById);
+router.get('/guardians', requirePermissions('guardian_view'), staffAccessScope, guardianController.getGuardians);
+router.get('/guardians/:id', requirePermissions('guardian_view'), staffAccessScope, guardianController.getGuardianById);
 router.post('/guardians', requirePermissions('guardian_create'), validate(guardianSchema), guardianController.createGuardian);
-router.patch('/guardians/:id', requirePermissions('guardian_edit'), validate(updateGuardianSchema), guardianController.updateGuardian);
-router.put('/guardians/:id', requirePermissions('guardian_edit'), validate(updateGuardianSchema), guardianController.updateGuardian);
-router.post('/guardians/:id/restore', requirePermissions('guardian_active'), guardianController.restoreGuardian);
-router.delete('/guardians/:id', requirePermissions('guardian_inactive'), guardianController.deleteGuardian);
+router.patch('/guardians/:id', requirePermissions('guardian_edit'), staffAccessScope, validate(updateGuardianSchema), guardianController.updateGuardian);
+router.put('/guardians/:id', requirePermissions('guardian_edit'), staffAccessScope, validate(updateGuardianSchema), guardianController.updateGuardian);
+router.post('/guardians/:id/restore', requirePermissions('guardian_active'), staffAccessScope, guardianController.restoreGuardian);
+router.delete('/guardians/:id', requirePermissions('guardian_inactive'), staffAccessScope, guardianController.deleteGuardian);
 router.post('/students/:studentId/guardians', requirePermissions('guardian_create'), guardianController.linkGuardianToStudent);
 
 // --- Admissions ---
 router.get('/admissions', requirePermissions('admission_view'), admissionController.getAdmissions);
 router.get('/admissions/:id', requirePermissions('admission_view'), admissionController.getAdmissionById);
 router.post('/admissions', requirePermissions('admission_create'), validate(admissionSchema), admissionController.createAdmission);
-router.patch('/admissions/:id/status', requirePermissions('admission_status_change'), validate(updateAdmissionStatusSchema), admissionController.updateAdmissionStatus);
-router.post('/admissions/:id/admit', requirePermissions('admission_status_change'), admissionController.admitStudent);
+router.patch('/admissions/:id/status', requirePermissions('admission_approve'), validate(updateAdmissionStatusSchema), admissionController.updateAdmissionStatus);
+router.post('/admissions/:id/admit', requirePermissions('admission_approve'), admissionController.admitStudent);
 
 // --- Enrollments ---
 router.get('/enrollments', requirePermissions('enrollment_view'), enrollmentController.getEnrollments);
 router.post('/enrollments', requirePermissions('enrollment_create'), validate(enrollmentSchema), enrollmentController.createEnrollment);
-router.post('/enrollments/promote', requirePermissions('enrollment_promote'), enrollmentController.promoteStudents);
+router.post('/enrollments/:id/promote', requirePermissions('enrollment_promote'), enrollmentController.promoteStudents);
 
 // --- Documents ---
 router.get('/students/:studentId/documents', requirePermissions('student_view'), documentController.getStudentDocuments);
-router.post('/students/:studentId/documents', requirePermissions('student_update'), documentController.uploadMiddleware.single('file'), documentController.uploadDocument);
-router.put('/students/:studentId/documents/:id', requirePermissions('student_update'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
-router.delete('/students/:studentId/documents/:id', requirePermissions('student_archive'), documentController.deleteDocument);
+router.post('/students/:studentId/documents', requirePermissions('document_create'), documentController.uploadMiddleware.single('file'), documentController.uploadDocument);
+router.put('/students/:studentId/documents/:id', requirePermissions('document_update'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
+router.delete('/students/:studentId/documents/:id', requirePermissions('document_delete'), documentController.deleteDocument);
 
-router.get('/documents/:id/file', documentController.serveDocumentFile);
-router.get('/documents/:id/preview', documentController.serveDocumentFile);
-router.get('/documents/:id/download', documentController.downloadDocumentFile);
+router.get('/documents/:id/file', requirePermissions('document_view'), documentController.serveDocumentFile);
+router.get('/documents/:id/preview', requirePermissions('document_view'), documentController.serveDocumentFile);
+router.get('/documents/:id/download', requirePermissions('document_view'), documentController.downloadDocumentFile);
 router.put('/documents/:id', requirePermissions('document_edit'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
 router.patch('/documents/:id', requirePermissions('document_edit'), documentController.uploadMiddleware.single('file'), documentController.updateDocument);
 router.delete('/documents/:id', requirePermissions('student_archive'), documentController.deleteDocument);
@@ -323,7 +332,7 @@ router.patch('/settings', requirePermissions('settings_manage'), validate(update
 
 // --- Audit Logs & Roles ---
 router.get('/audit-logs', requirePermissions('audit_view'), auditLogController.getAuditLogs);
-router.get('/roles', requirePermissions('role_view'), roleController.getRoles);
+router.get('/roles', roleController.getRoles);
 router.get('/roles/:id', requirePermissions('role_view'), roleController.getRoleById);
 router.post('/roles', requirePermissions('role_manage'), validate(roleSchema), roleController.createRole);
 router.put('/roles/:id', requirePermissions('role_manage'), validate(updateRoleSchema), roleController.updateRole);
@@ -332,12 +341,12 @@ router.delete('/roles/:id', requirePermissions('role_manage'), roleController.de
 router.get('/permissions', requirePermissions('role_view'), roleController.getPermissions);
 
 // --- Phase 3: Period Bell Schedules ---
-router.get('/periods', requirePermissions('period_view'), periodController.getPeriods);
-router.post('/periods', requirePermissions('period_manage'), validate(periodSchema), periodController.createPeriod);
-router.patch('/periods/:id', requirePermissions('period_manage'), validate(updatePeriodSchema), periodController.updatePeriod);
-router.put('/periods/:id', requirePermissions('period_manage'), validate(updatePeriodSchema), periodController.updatePeriod);
-router.post('/periods/:id/restore', requirePermissions('period_manage'), periodController.restorePeriod);
-router.delete('/periods/:id', requirePermissions('period_manage'), periodController.deletePeriod);
+router.get('/periods', periodController.getPeriods);
+router.post('/periods', requirePermissions('period_create'), validate(periodSchema), periodController.createPeriod);
+router.patch('/periods/:id', requirePermissions('period_edit'), validate(updatePeriodSchema), periodController.updatePeriod);
+router.put('/periods/:id', requirePermissions('period_edit'), validate(updatePeriodSchema), periodController.updatePeriod);
+router.post('/periods/:id/restore', requirePermissions('period_active'), periodController.restorePeriod);
+router.delete('/periods/:id', requirePermissions('period_inactive'), periodController.deletePeriod);
 
 // --- Phase 3: Timetable Matrix ---
 router.get('/timetables', requirePermissions('timetable_view'), timetableController.getTimetables);
@@ -356,12 +365,12 @@ router.post('/timetables/bulk-update', requirePermissions('timetable_manage'), v
 router.post('/timetables/swap', requirePermissions('timetable_manage'), validate(timetableSwapSchema), timetableController.swapTimetableEntries);
 
 // --- Rooms (Smart Timetable Generator) ---
-router.get('/rooms', requirePermissions('room_view'), roomController.getRooms);
-router.post('/rooms', requirePermissions('room_manage'), validate(roomSchema), roomController.createRoom);
-router.patch('/rooms/:id', requirePermissions('room_manage'), validate(updateRoomSchema), roomController.updateRoom);
-router.put('/rooms/:id', requirePermissions('room_manage'), validate(updateRoomSchema), roomController.updateRoom);
-router.post('/rooms/:id/restore', requirePermissions('room_manage'), roomController.restoreRoom);
-router.delete('/rooms/:id', requirePermissions('room_manage'), roomController.deleteRoom);
+router.get('/rooms', roomController.getRooms);
+router.post('/rooms', requirePermissions('room_create'), validate(roomSchema), roomController.createRoom);
+router.patch('/rooms/:id', requirePermissions('room_edit'), validate(updateRoomSchema), roomController.updateRoom);
+router.put('/rooms/:id', requirePermissions('room_edit'), validate(updateRoomSchema), roomController.updateRoom);
+router.post('/rooms/:id/restore', requirePermissions('room_active'), roomController.restoreRoom);
+router.delete('/rooms/:id', requirePermissions('room_inactive'), roomController.deleteRoom);
 
 // --- Grade+Section instructional period selection (Smart Timetable Generator) ---
 // Different grades commonly run different period counts (Grade 1 = 4, Grade 5 = 8) — this
@@ -377,7 +386,7 @@ router.put('/timetable-generator/draft', requirePermissions('timetable_generate'
 router.delete('/timetable-generator/draft', requirePermissions('timetable_generate'), timetableGeneratorDraftController.deleteTimetableGeneratorDraft);
 
 // --- Phase 3: Configurable Attendance Statuses ---
-router.get('/attendance/statuses', requirePermissions('attendance_status_view'), attendanceStatusController.getAttendanceStatuses);
+router.get('/attendance/statuses', attendanceStatusController.getAttendanceStatuses);
 router.post('/attendance/statuses', requirePermissions('attendance_status_manage'), attendanceStatusController.createAttendanceStatus);
 router.patch('/attendance/statuses/:id', requirePermissions('attendance_status_manage'), attendanceStatusController.updateAttendanceStatus);
 
@@ -716,10 +725,10 @@ router.get('/mobile/dashboard', syncController.getMobileDashboard);
 router.get('/mobile/config', syncController.getMobileConfig);
 
 // --- Error Monitoring Module ---
-router.get('/error-logs/stats', requirePermissions('audit_view'), errorLogController.getErrorLogStats);
-router.get('/error-logs/group/:fingerprint', requirePermissions('audit_view'), errorLogController.getErrorLogGroup);
+router.get('/error-logs/stats', requirePermissions('error_log_view'), errorLogController.getErrorLogStats);
+router.get('/error-logs/group/:fingerprint', requirePermissions('error_log_view'), errorLogController.getErrorLogGroup);
 router.patch('/error-logs/group/:fingerprint/status', requirePermissions('audit_manage'), errorLogController.updateErrorLogGroupStatus);
-router.get('/error-logs', requirePermissions('audit_view'), errorLogController.getErrorLogs);
+router.get('/error-logs', requirePermissions('error_log_view'), errorLogController.getErrorLogs);
 
 module.exports = router;
 

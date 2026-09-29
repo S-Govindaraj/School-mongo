@@ -5,7 +5,7 @@ const { NotFoundError, ValidationError } = require('../utils/errors');
 const getQualifications = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, search, level } = req.query;
+    const { status, search, level, apiLevel } = req.query;
 
     const filter = {
       $or: [{ schoolId }, { schoolId: null }],
@@ -26,6 +26,14 @@ const getQualifications = async (req, res, next) => {
           ],
         },
       ];
+    }
+
+    if (apiLevel === 'master') {
+      const masterQualifications = await Qualification.find(filter)
+        .select('_id name code level')
+        .sort({ name: 1 })
+        .lean();
+      return successResponse(res, masterQualifications, 'Qualifications retrieved successfully');
     }
 
     const qualifications = await Qualification.find(filter).sort({ name: 1 }).lean();

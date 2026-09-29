@@ -72,13 +72,21 @@ const updateSchoolProfile = async (req, res, next) => {
 const getCampuses = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    if (apiLevel === 'master') {
+      const masterCampuses = await Campus.find(filter)
+        .select('_id name code status')
+        .sort({ isMain: -1, name: 1 })
+        .lean();
+      return successResponse(res, masterCampuses, 'Campuses retrieved');
     }
 
     const campuses = await Campus.find(filter).sort({ isMain: -1, name: 1 });

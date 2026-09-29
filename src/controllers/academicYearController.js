@@ -40,7 +40,7 @@ const parseAndNormalizeYear = (rawYear) => {
 const getAcademicYears = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, apiLevel } = req.query;
 
     const filter = { schoolId };
 
@@ -48,6 +48,14 @@ const getAcademicYears = async (req, res, next) => {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    if (apiLevel === 'master') {
+      const years = await AcademicYear.find(filter)
+        .select('_id name code isCurrent')
+        .sort({ startDate: -1 })
+        .lean();
+      return successResponse(res, years, 'Academic years retrieved');
     }
 
     const years = await AcademicYear.find(filter)

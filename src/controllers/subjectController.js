@@ -9,7 +9,7 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getSubjects = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived, type, search } = req.query;
+    const { status, includeArchived, type, search, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
@@ -23,6 +23,11 @@ const getSubjects = async (req, res, next) => {
     if (search && search.trim()) {
       const regex = new RegExp(search.trim(), 'i');
       filter.$or = [{ name: regex }, { code: regex }, { shortName: regex }];
+    }
+
+    if (apiLevel === 'master') {
+      const masterSubjects = await Subject.find(filter).select('_id name code type').sort({ name: 1 }).lean();
+      return successResponse(res, masterSubjects, 'Subjects retrieved successfully');
     }
 
     const subjects = await Subject.find(filter).sort({ name: 1 }).lean();

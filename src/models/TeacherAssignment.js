@@ -25,5 +25,7 @@ teacherAssignmentSchema.index(
 teacherAssignmentSchema.index({ schoolId: 1, academicYearId: 1, staffId: 1, status: 1 });
 // Section-level assignment listing
 teacherAssignmentSchema.index({ schoolId: 1, academicYearId: 1, sectionId: 1, status: 1 });
+// Staff In-Charge grade-scope resolution (staffAccessScopeService.js)
+teacherAssignmentSchema.index({ schoolId: 1, gradeId: 1, status: 1 });
 
 module.exports = mongoose.model('TeacherAssignment', teacherAssignmentSchema);

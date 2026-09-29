@@ -9,7 +9,7 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getAcademicTerms = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { academicYearId, status, includeArchived } = req.query;
+    const { academicYearId, status, includeArchived, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
@@ -19,6 +19,14 @@ const getAcademicTerms = async (req, res, next) => {
     }
     if (academicYearId) {
       filter.academicYearId = academicYearId;
+    }
+
+    if (apiLevel === 'master') {
+      const terms = await AcademicTerm.find(filter)
+        .select('_id name code academicYearId')
+        .sort({ sequence: 1, startDate: 1 })
+        .lean();
+      return successResponse(res, terms, 'Academic terms retrieved');
     }
 
     const terms = await AcademicTerm.find(filter)

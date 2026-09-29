@@ -4,6 +4,19 @@ const Student = require('../models/Student');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { resolveScopedGuardianIds } = require('../services/staffAccessScopeService');
+
+// Staff In-Charge / Class Teacher guard for single-record guardian endpoints —
+// throws the same NotFoundError a wrong-schoolId lookup already throws, so an
+// out-of-scope record is indistinguishable from a nonexistent one.
+async function assertGuardianInScope(req, schoolId, guardianId) {
+  const scope = req.staffAccessScope;
+  if (!scope || scope.mode === 'ALL') return;
+  const allowed = await resolveScopedGuardianIds(scope, schoolId);
+  if (allowed !== null && !allowed.includes(String(guardianId))) {
+    throw new NotFoundError('Guardian not found');
+  }
+}
 
 const getGuardians = async (req, res, next) => {
   try {
@@ -27,6 +40,11 @@ const getGuardians = async (req, res, next) => {
         { phone: { $regex: s, $options: 'i' } },
         { email: { $regex: s, $options: 'i' } },
       ];
+    }
+
+    const allowedGuardianIds = await resolveScopedGuardianIds(req.staffAccessScope, schoolId);
+    if (allowedGuardianIds !== null) {
+      query._id = { $in: allowedGuardianIds };
     }
 
     const [totalRecords, guardians] = await Promise.all([
@@ -117,6 +135,7 @@ const updateGuardian = async (req, res, next) => {
 
     const guardian = await Guardian.findOne({ _id: id, schoolId });
     if (!guardian) throw new NotFoundError('Guardian not found');
+    await assertGuardianInScope(req, schoolId, id);
 
     const previousState = guardian.toObject();
     Object.assign(guardian, req.body);
@@ -134,6 +153,7 @@ const getGuardianById = async (req, res, next) => {
     const schoolId = req.schoolContext?.schoolId;
     const guardian = await Guardian.findOne({ _id: req.params.id, schoolId });
     if (!guardian) throw new NotFoundError('Guardian not found');
+    await assertGuardianInScope(req, schoolId, req.params.id);
     return successResponse(res, guardian, 'Guardian retrieved successfully');
   } catch (error) {
     next(error);
@@ -179,6 +199,7 @@ const deleteGuardian = async (req, res, next) => {
     if (!guardian) {
       throw new NotFoundError('Guardian not found.');
     }
+    await assertGuardianInScope(req, schoolId, id);
 
     guardian.status = 'INACTIVE';
     await guardian.save();
@@ -220,6 +241,7 @@ const restoreGuardian = async (req, res, next) => {
     if (!guardian) {
       throw new NotFoundError('Guardian not found.');
     }
+    await assertGuardianInScope(req, schoolId, id);
 
     const oldValues = guardian.toObject();
     guardian.status = 'ACTIVE';

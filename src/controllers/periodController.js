@@ -81,13 +81,21 @@ const validatePeriod = async (schoolId, data, currentId = null) => {
 const getPeriods = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    if (apiLevel === 'master') {
+      const masterPeriods = await Period.find(filter)
+        .select('_id name code sequence startTime endTime type isBreak status')
+        .sort({ sequence: 1 })
+        .lean();
+      return successResponse(res, masterPeriods, 'Periods retrieved successfully');
     }
 
     const periods = await Period.find(filter).sort({ sequence: 1 }).lean();

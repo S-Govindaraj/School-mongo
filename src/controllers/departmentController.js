@@ -7,7 +7,7 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getDepartments = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, search } = req.query;
+    const { status, search, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
@@ -18,6 +18,11 @@ const getDepartments = async (req, res, next) => {
         { name: { $regex: search.trim(), $options: 'i' } },
         { code: { $regex: search.trim(), $options: 'i' } },
       ];
+    }
+
+    if (apiLevel === 'master') {
+      const masterDepartments = await Department.find(filter).select('_id name code').sort({ name: 1 }).lean();
+      return successResponse(res, masterDepartments, 'Departments retrieved successfully');
     }
 
     const departments = await Department.find(filter)

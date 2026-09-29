@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Student = require('../models/Student');
 const Guardian = require('../models/Guardian');
 const StudentGuardian = require('../models/StudentGuardian');
@@ -9,6 +10,20 @@ const { generateSequenceNumber } = require('../utils/sequenceUtils');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
+const { narrowEnrollmentFilter, isEnrollmentAllowed } = require('../services/staffAccessScopeService');
+
+// Staff In-Charge / Class Teacher guard for single-record student endpoints —
+// throws the same NotFoundError a wrong-schoolId lookup already throws, so an
+// out-of-scope record is indistinguishable from a nonexistent one (no
+// existence-leak via a different error/status code).
+async function assertStudentInScope(req, schoolId, studentId) {
+  const scope = req.staffAccessScope;
+  if (!scope || scope.mode === 'ALL') return;
+  const currentEnrollment = await Enrollment.findOne({ schoolId, studentId, isCurrent: true }).lean();
+  if (!isEnrollmentAllowed(scope, currentEnrollment)) {
+    throw new NotFoundError('Student record not found');
+  }
+}
 
 const getStudents = async (req, res, next) => {
   try {
@@ -53,27 +68,41 @@ const getStudents = async (req, res, next) => {
       ];
     }
 
-    // Phase 1: enrollment pre-filter (if needed) + KPI counts all in parallel
-    const enrollFilterQuery = (gradeId || sectionId || academicYearId) ? (() => {
+    // Staff In-Charge / Class Teacher scoping — applies whenever the caller
+    // isn't in an 'ALL'-mode scope, regardless of whether they also passed
+    // their own gradeId/sectionId/academicYearId params (those are narrowed
+    // further, never used to escape the scope).
+    const scope = req.staffAccessScope;
+    const needsEnrollmentFilter = !!(gradeId || sectionId || academicYearId) || (scope && scope.mode !== 'ALL');
+
+    // Phase 1: enrollment pre-filter (if needed)
+    const enrollFilterQuery = needsEnrollmentFilter ? (() => {
       const q = { schoolId, isCurrent: true };
       if (gradeId) q.gradeId = gradeId;
       if (sectionId) q.sectionId = sectionId;
       if (academicYearId) q.academicYearId = academicYearId;
+      narrowEnrollmentFilter(q, scope);
       return q;
     })() : null;
 
-    const [matchingEnrollments, totalApplicants, totalActive, totalAdmitted] = await Promise.all([
-      enrollFilterQuery
-        ? Enrollment.find(enrollFilterQuery).select('studentId').lean()
-        : Promise.resolve(null),
-      Student.countDocuments({ schoolId, status: 'APPLICANT' }),
-      Student.countDocuments({ schoolId, status: 'ACTIVE' }),
-      Student.countDocuments({ schoolId, status: 'ADMITTED' }),
-    ]);
+    const matchingEnrollments = enrollFilterQuery
+      ? await Enrollment.find(enrollFilterQuery).select('studentId').lean()
+      : null;
 
     if (matchingEnrollments) {
       query._id = { $in: matchingEnrollments.map((e) => e.studentId) };
     }
+
+    // KPI counts must respect the same scope as the list itself (but keep
+    // their existing school-wide-by-status semantics otherwise — they never
+    // factored in the caller's own search/status params, and still don't;
+    // only the scope-narrowed `_id` set is layered on top).
+    const kpiScopeFilter = query._id ? { _id: query._id } : {};
+    const [totalApplicants, totalActive, totalAdmitted] = await Promise.all([
+      Student.countDocuments({ schoolId, ...kpiScopeFilter, status: 'APPLICANT' }),
+      Student.countDocuments({ schoolId, ...kpiScopeFilter, status: 'ACTIVE' }),
+      Student.countDocuments({ schoolId, ...kpiScopeFilter, status: 'ADMITTED' }),
+    ]);
 
     // Phase 2: paginated student list + total count in parallel
     const sortDir = String(sortOrder).toLowerCase() === 'desc' ? -1 : 1;
@@ -166,6 +195,7 @@ const getStudent360 = async (req, res, next) => {
     }
 
     const resolvedStudentId = student._id;
+    await assertStudentInScope(req, schoolId, resolvedStudentId);
 
     const [guardiansLinks, enrollments, documents, academicHistory, auditLogs] = await Promise.all([
       StudentGuardian.find({ schoolId, studentId: resolvedStudentId })
@@ -313,6 +343,7 @@ const updateStudent = async (req, res, next) => {
     if (!student) {
       throw new NotFoundError('Student record not found');
     }
+    await assertStudentInScope(req, schoolId, id);
 
     const previousState = student.toObject();
     Object.assign(student, req.body);
@@ -335,6 +366,7 @@ const updateStudentStatus = async (req, res, next) => {
     if (!student) {
       throw new NotFoundError('Student record not found');
     }
+    await assertStudentInScope(req, schoolId, id);
 
     const previousStatus = student.status;
     student.status = status;
@@ -356,6 +388,7 @@ const deleteStudent = async (req, res, next) => {
     if (!student) {
       throw new NotFoundError('Student record not found');
     }
+    await assertStudentInScope(req, schoolId, id);
 
     student.status = 'INACTIVE';
     await student.save();
@@ -388,6 +421,7 @@ const restoreStudent = async (req, res, next) => {
     if (!student) {
       throw new NotFoundError('Student record not found');
     }
+    await assertStudentInScope(req, schoolId, id);
 
     const oldValues = student.toObject();
     student.status = 'ACTIVE';

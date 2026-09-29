@@ -15,7 +15,7 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getSections = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { gradeId, status, includeArchived, limit, academicYearId } = req.query;
+    const { gradeId, status, includeArchived, limit, academicYearId, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
@@ -26,6 +26,15 @@ const getSections = async (req, res, next) => {
 
     if (gradeId) {
       filter.gradeId = gradeId;
+    }
+
+    if (apiLevel === 'master') {
+      let masterQuery = Section.find(filter).select('_id name code gradeId room').sort({ name: 1 });
+      if (limit && Number(limit) > 0) {
+        masterQuery = masterQuery.limit(Number(limit));
+      }
+      const masterSections = await masterQuery.lean();
+      return successResponse(res, masterSections, 'Sections retrieved successfully');
     }
 
     let query = Section.find(filter)

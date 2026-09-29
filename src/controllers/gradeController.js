@@ -11,13 +11,21 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getGrades = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    if (apiLevel === 'master') {
+      const masterGrades = await Grade.find(filter)
+        .select('_id name code category')
+        .sort({ sequenceOrder: 1, name: 1 })
+        .lean();
+      return successResponse(res, masterGrades, 'Grades retrieved successfully');
     }
 
     const grades = await Grade.find(filter).sort({ sequenceOrder: 1, name: 1 }).lean();

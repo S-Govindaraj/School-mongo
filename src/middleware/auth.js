@@ -29,7 +29,7 @@ const authenticate = async (req, res, next) => {
     const decoded = jwt.verify(token, getJwtSecret());
     const user = await User.findById(decoded.userId)
       .select('name email phone status schoolId roleId')
-      .populate('roleId', 'name code permissions')
+      .populate('roleId', 'name code permissions hierarchyLevel')
       .lean();
 
     if (!user || user.status !== 'ACTIVE') {
@@ -59,7 +59,7 @@ const optionalAuthenticate = async (req, res, next) => {
         const decoded = jwt.verify(token, getJwtSecret());
         const user = await User.findById(decoded.userId)
           .select('name email phone status schoolId roleId')
-          .populate('roleId', 'name code permissions')
+          .populate('roleId', 'name code permissions hierarchyLevel')
           .lean();
         if (user && user.status === 'ACTIVE') {
           req.user = user;
@@ -150,11 +150,33 @@ const PERMISSION_ALIASES = {
   'document_archive': ['document_archive', 'document_delete', 'student_archive', 'student_update', 'document_manage', 'admin_manage'],
   'document_download': ['document_download', 'document_view', 'student_view', 'document_manage', 'admin_manage'],
   'document_manage': ['document_manage', 'admin_manage'],
+
+  // Wave 2 (Students/Attendance/Guardians remediation, Sept 2026):
+  // student_status_change is a newly-seeded catalog code for the (currently
+  // dead — no frontend caller) PATCH /students/:id/status route; aliased to
+  // the closely-related student_update/student_archive so it isn't a dead
+  // end for any role if/when a caller is added.
+  'student_status_change': ['student_status_change', 'student_update', 'student_archive', 'admin_manage'],
+  // enrollment_promote is a newly-seeded catalog code for the per-enrollment
+  // Promote route (fixed this wave to actually take an :id param). The
+  // pre-existing enrollment_update code's own catalog description is
+  // "Promote / Transfer Students", so any role already holding it for that
+  // purpose keeps working immediately without a manual role update — same
+  // backward-compatibility pattern used throughout this file.
+  'enrollment_promote': ['enrollment_promote', 'enrollment_update'],
   'settings_view': ['settings.view', 'settings_view'],
   'settings_manage': ['settings.manage', 'settings_manage', 'settings_view', 'settings.view'],
   'audit_view': ['audit.view', 'audit_view'],
   'role_view': ['role.view', 'role_view'],
   'role_manage': ['role.manage', 'role_create', 'role_edit', 'role_delete', 'role_activate', 'role_view', 'role.view'],
+  // Legacy granular Role codes (role_create/_edit/_delete) — the backend routes
+  // themselves only ever check role_manage, but these aliases make the legacy
+  // codes actually work as advertised by their seedDatabase.js "(Legacy) /
+  // Alias for role_manage" descriptions, for any role still holding them.
+  'role_create': ['role_create', 'role_manage'],
+  'role_edit': ['role_edit', 'role_manage'],
+  'role_delete': ['role_delete', 'role_manage'],
+  'role_activate': ['role_activate', 'role_manage'],
   'parent_portal_view': ['parent_portal_view', 'parent_portal.view', 'school_view', 'admin_view'],
   'teacher_portal_view': ['teacher_portal_view', 'teacher_portal.view', 'teacher_view', 'staff_view', 'school_view'],
   'student_portal_view': ['student_portal_view', 'student_portal.view', 'student_view', 'school_view'],
@@ -167,8 +189,25 @@ const PERMISSION_ALIASES = {
   'timetable_generate': ['timetable_generate', 'timetable_manage'],
   'timetable_publish': ['timetable_publish', 'timetable_manage'],
   'timetable_lock': ['timetable_lock', 'timetable_manage'],
+  'timetable_create': ['timetable_create', 'timetable_manage'],
+  'timetable_update': ['timetable_update', 'timetable_manage'],
+  'timetable_delete': ['timetable_delete', 'timetable_manage'],
   'room_view': ['room_view', 'room_manage', 'timetable_manage', 'period_manage'],
   'room_manage': ['room_manage', 'timetable_manage'],
+
+  // Periods/Rooms: granular create/edit/active/inactive split out of the
+  // pre-existing coarse period_manage/room_manage codes. Any role that
+  // already held the coarse code keeps working immediately without a
+  // manual role update — same backward-compatibility pattern used
+  // throughout this file (e.g. academic_year_manage above).
+  'period_create': ['period_create', 'period_manage'],
+  'period_edit': ['period_edit', 'period_manage'],
+  'period_active': ['period_active', 'period_manage'],
+  'period_inactive': ['period_inactive', 'period_manage'],
+  'room_create': ['room_create', 'room_manage'],
+  'room_edit': ['room_edit', 'room_manage'],
+  'room_active': ['room_active', 'room_manage'],
+  'room_inactive': ['room_inactive', 'room_manage'],
 
   // Student 360: exam_result_view is a brand-new permission (ExamResult had no
   // API surface before this feature) — aliased to student_view so any role that
@@ -199,6 +238,37 @@ const PERMISSION_ALIASES = {
   'exam_correction_view': ['exam_correction_view', 'exam_view', 'exam_manage'],
   'exam_correction_request': ['exam_correction_request', 'exam_marks_enter', 'exam_manage'],
   'exam_correction_approve': ['exam_correction_approve'],
+
+  // Wave 3 (Exams/Finance/Admin/Operations remediation, Sept 2026):
+  // audit_manage is a newly-seeded, real catalog permission (previously checked
+  // by frontend+backend but unassignable to any role). error_log_view is split
+  // out of the shared audit_view code so Error Monitoring can be granted
+  // independently of Audit Logs; any role that already held audit_view or
+  // audit_manage keeps working immediately, same backward-compatibility
+  // pattern used throughout this file.
+  'audit_manage': ['audit.manage', 'audit_manage'],
+  'error_log_view': ['error_log_view', 'audit_view', 'audit_manage'],
+
+  // Visitors: the frontend's Check-In/Check-Out/Issue-Gate-Pass/Redeem-Exit
+  // actions all check the broad visitor_manage code; the backend requires the
+  // narrower visitor_checkin/gate_pass_create/gate_pass_use codes. A broad
+  // visitor_manage grant is intended to imply these narrower actions.
+  'visitor_checkin': ['visitor_checkin', 'visitor_manage'],
+  'gate_pass_create': ['gate_pass_create', 'visitor_manage'],
+  'gate_pass_use': ['gate_pass_use', 'visitor_manage'],
+
+  // Assets: broad asset_manage grant implies the narrower assign/dispose actions.
+  'asset_assign': ['asset_assign', 'asset_manage'],
+  'asset_dispose': ['asset_dispose', 'asset_manage'],
+
+  // Hostel: broad hostel_manage grant implies allocation management (allocate/vacate).
+  // hostel_allocation_view is a distinct, already-seeded code; a role with the
+  // broader hostel_manage or the base hostel_view keeps seeing Allocations.
+  'hostel_allocation_manage': ['hostel_allocation_manage', 'hostel_manage'],
+  'hostel_allocation_view': ['hostel_allocation_view', 'hostel_view', 'hostel_manage'],
+
+  // Inventory: broad inventory_manage grant implies stock adjustments.
+  'stock_adjust': ['stock_adjust', 'inventory_manage'],
 };
 
 const requirePermissions = (...requiredPermissions) => {

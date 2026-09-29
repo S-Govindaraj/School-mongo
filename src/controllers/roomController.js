@@ -19,13 +19,18 @@ const validateRoom = async (schoolId, data, currentId = null) => {
 const getRooms = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived } = req.query;
+    const { status, includeArchived, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
       filter.status = status;
     } else if (includeArchived === 'false') {
       filter.status = { $ne: 'ARCHIVED' };
+    }
+
+    if (apiLevel === 'master') {
+      const masterRooms = await Room.find(filter).select('_id name code capacity isLab status').sort({ name: 1 }).lean();
+      return successResponse(res, masterRooms, 'Rooms retrieved successfully');
     }
 
     const rooms = await Room.find(filter).sort({ name: 1 }).lean();

@@ -218,6 +218,7 @@ const staffSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   designation: z.string().min(1, 'Designation is required'),
+  designationId: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
   department: z.string().optional(),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
@@ -229,6 +230,11 @@ const staffSchema = z.object({
   employmentStatus: z.enum(['TEACHING', 'NON_TEACHING', 'ADMIN']).optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).optional(),
   userId: z.string().optional(),
+  assignedGradeIds: z.array(z.string()).optional(),
+  isIncharge: z.boolean().optional(),
+  inchargeDetails: z.object({
+    gradeIds: z.array(z.string()).optional().default([]),
+  }).optional(),
 });
 
 const updateStaffSchema = staffSchema.partial();

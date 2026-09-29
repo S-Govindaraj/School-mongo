@@ -14,6 +14,7 @@ const getRoles = async (req, res, next) => {
     const status = (req.query.status || '').trim();
     const roleType = (req.query.roleType || '').trim();
     const hierarchyLevel = req.query.hierarchyLevel;
+    const { apiLevel } = req.query;
 
     // Ensure a standard Teacher role exists in the database
     let teacherRole = await Role.findOne({ code: 'TEACHER' });
@@ -51,6 +52,16 @@ const getRoles = async (req, res, next) => {
     }
     if (hierarchyLevel !== undefined && hierarchyLevel !== '' && hierarchyLevel !== 'ALL') {
       query.hierarchyLevel = Number(hierarchyLevel);
+    }
+
+    if (apiLevel === 'master') {
+      let masterRoles = await Role.find(query).select('_id name code').sort({ hierarchyLevel: 1 }).lean();
+      if (search) {
+        masterRoles = masterRoles.filter(
+          (r) => (r.name || '').toLowerCase().includes(search) || (r.code || '').toLowerCase().includes(search)
+        );
+      }
+      return successResponse(res, masterRoles, 'Roles retrieved successfully');
     }
 
     const roles = await Role.find(query).sort({ hierarchyLevel: 1 });
@@ -385,37 +396,115 @@ const deleteRole = async (req, res, next) => {
   }
 };
 
+// Display-only grouping fixes for the Permissions Matrix (RoleFormPage's
+// PermissionPicker) — applied purely in this response, never written back to
+// the DB, so nothing needs re-seeding for these to take effect and no other
+// consumer of the Permission collection (there is none besides this
+// endpoint — confirmed via repo-wide search) is affected.
+//
+// 1. A handful of catalog rows are pure backward-compat aliases for a
+//    permission already shown elsewhere (e.g. `guardian_update` duplicates
+//    `guardian_edit`; `teacher_view/create/edit/delete` duplicate
+//    `staff_*`; `role_create/edit/delete/activate` duplicate `role_manage`)
+//    — they'd otherwise show up as confusing duplicate-looking checkboxes.
+//    Hidden here; still fully functional via the alias maps in
+//    middleware/auth.js if a role already holds one of these codes.
+const isLegacyAliasPermission = (p) => /\(Legacy\)/i.test(p.name || '') || /^Alias for/i.test(p.description || '');
+
+// 2. A few permission codes live under a DB `module` value that doesn't
+// match where they actually belong in the UI (e.g. `guardian_*` codes are
+// stored under "Student Management"). Reassign just those, by code, for
+// display grouping only.
+const MODULE_OVERRIDE_BY_CODE = {
+  guardian_view: 'Guardians',
+  guardian_create: 'Guardians',
+  guardian_edit: 'Guardians',
+  guardian_active: 'Guardians',
+  guardian_inactive: 'Guardians',
+  guardian_update: 'Guardians',
+  guardian_manage: 'Guardians',
+};
+
+// 3. Rename a couple of DB module labels to match the exact sidebar section
+// labels they correspond to (devel/front/src/components/layout/Sidebar.jsx).
+const MODULE_DISPLAY_RENAME = {
+  'Student Management': 'Students',
+  'People & Staff': 'Staff & Teachers',
+  'Academic Setup': 'Academic Configuration',
+};
+
+// 4. Top-level group order — mirrors the sidebar's own section order
+// (Sidebar.jsx: Main -> Role Portals -> People -> Academic -> Admissions ->
+// Finance & Fees -> Operations -> Communications -> Reports & Analytics ->
+// Administration), and within "People", the same Students -> Staff ->
+// Guardians order as that section's own nav items / tabs. Any module not
+// listed here (future additions) sorts alphabetically after everything
+// listed, rather than disappearing.
+const MODULE_ORDER = [
+  'Portals',
+  'Students', 'Staff & Teachers', 'Guardians', 'HRMS', 'Payroll',
+  'Academic Configuration', 'Academic Operations', 'Attendance & Leave', 'Examinations',
+  'Admissions & Enrollment',
+  'Finance & Fees', 'Finance & Billing', 'Finance & Refunds', 'Finance & Ledger', 'Finance Reporting',
+  'Transport', 'Library', 'Inventory', 'Procurement', 'Hostel', 'Assets', 'Visitors',
+  'Documents',
+  'Notifications', 'Communications', 'Messaging',
+  'Analytics', 'Reports', 'Exports',
+  'School Setup', 'Roles & Access Control', 'System & Audit',
+  'SaaS', 'Mobile & PWA',
+];
+
+// 5. Within a group, order by action verb (view first, then the usual CRUD
+// sequence, then anything else alphabetically) instead of alphabetical by
+// name — matches the `<module>_view/_create/_edit/_active/_inactive`
+// convention the rest of the app's permission codes already follow.
+const ACTION_ORDER = ['view', 'create', 'edit', 'update', 'active', 'inactive', 'delete', 'archive', 'approve', 'manage'];
+
 const getPermissions = async (req, res, next) => {
   try {
-    const permissions = await Permission.find({}).sort({ module: 1, name: 1 });
+    const permissions = await Permission.find({}).lean();
 
-    const grouped = permissions.reduce((acc, p) => {
-      const mod = p.module || 'General';
-      if (!acc[mod]) acc[mod] = [];
-      const codeNormalized = (p.code || '').replace(/\./g, '_');
-      acc[mod].push({
-        id: p._id,
-        module: p.module,
-        action: p.action,
-        code: codeNormalized,
-        name: p.name,
-        description: p.description,
-      });
+    const visible = permissions.filter((p) => !isLegacyAliasPermission(p));
+
+    const toApiShape = (p) => ({
+      id: p._id,
+      module: MODULE_OVERRIDE_BY_CODE[p.code] || MODULE_DISPLAY_RENAME[p.module] || p.module || 'General',
+      action: p.action,
+      code: (p.code || '').replace(/\./g, '_'),
+      name: p.name,
+      description: p.description,
+    });
+
+    const grouped = visible.reduce((acc, raw) => {
+      const p = toApiShape(raw);
+      if (!acc[p.module]) acc[p.module] = [];
+      acc[p.module].push(p);
       return acc;
     }, {});
+
+    const moduleRank = (mod) => {
+      const idx = MODULE_ORDER.indexOf(mod);
+      return idx === -1 ? MODULE_ORDER.length : idx;
+    };
+    const actionRank = (action) => {
+      const idx = ACTION_ORDER.indexOf(action);
+      return idx === -1 ? ACTION_ORDER.length : idx;
+    };
+
+    const orderedGrouped = {};
+    Object.keys(grouped)
+      .sort((a, b) => moduleRank(a) - moduleRank(b) || a.localeCompare(b))
+      .forEach((mod) => {
+        orderedGrouped[mod] = grouped[mod].sort(
+          (a, b) => actionRank(a.action) - actionRank(b.action) || (a.name || '').localeCompare(b.name || '')
+        );
+      });
 
     return successResponse(
       res,
       {
-        all: permissions.map((p) => ({
-          id: p._id,
-          module: p.module,
-          action: p.action,
-          code: (p.code || '').replace(/\./g, '_'),
-          name: p.name,
-          description: p.description,
-        })),
-        grouped,
+        all: visible.map(toApiShape),
+        grouped: orderedGrouped,
       },
       'Permissions retrieved successfully'
     );

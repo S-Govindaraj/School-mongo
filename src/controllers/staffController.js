@@ -5,16 +5,32 @@ const Section = require('../models/Section');
 const TeacherAssignment = require('../models/TeacherAssignment');
 const Department = require('../models/Department');
 const Qualification = require('../models/Qualification');
+const Designation = require('../models/Designation');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const { resolveScopedStaffIds } = require('../services/staffAccessScopeService');
+
+// Staff In-Charge / Class Teacher guard for single-record staff endpoints —
+// throws the same NotFoundError a wrong-schoolId lookup already throws, so an
+// out-of-scope record is indistinguishable from a nonexistent one. A staff
+// member can always see/act on their own record regardless of scope.
+async function assertStaffInScope(req, schoolId, staffId) {
+  const scope = req.staffAccessScope;
+  if (!scope || scope.mode === 'ALL') return;
+  if (scope.staffId && String(scope.staffId) === String(staffId)) return;
+  const allowed = await resolveScopedStaffIds(scope, schoolId);
+  if (allowed !== null && !allowed.includes(String(staffId))) {
+    throw new NotFoundError('Staff member not found.');
+  }
+}
 
 const getStaff = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { status, includeArchived, isTeachingStaff, department, search, employeeId } = req.query;
+    const { status, includeArchived, isTeachingStaff, department, search, employeeId, apiLevel } = req.query;
 
     const filter = { schoolId };
     if (status && status !== 'ALL') {
@@ -48,9 +64,24 @@ const getStaff = async (req, res, next) => {
       ];
     }
 
+    const allowedStaffIds = await resolveScopedStaffIds(req.staffAccessScope, schoolId);
+    if (allowedStaffIds !== null) {
+      filter._id = { $in: allowedStaffIds };
+    }
+
+    if (apiLevel === 'master') {
+      const masterStaff = await Staff.find(filter)
+        .select('_id firstName lastName employeeId email phone qualification designation')
+        .sort({ createdAt: -1 })
+        .lean();
+      return successResponse(res, masterStaff, 'Staff members retrieved successfully');
+    }
+
     const staff = await Staff.find(filter)
       .populate('userId', 'name email phone status')
       .populate('departmentId', 'name code')
+      .populate('designationId', 'name code')
+      .populate('assignedGradeIds', 'name code')
       .populate('qualificationIds', 'name code level')
       .sort({ createdAt: -1 })
       .lean();
@@ -71,12 +102,15 @@ const getStaffById = async (req, res, next) => {
     })
       .populate('userId')
       .populate('departmentId', 'name code')
+      .populate('designationId', 'name code')
+      .populate('assignedGradeIds', 'name code')
       .populate('qualificationIds', 'name code level')
       .lean();
 
     if (!staff) {
       throw new NotFoundError('Staff member not found');
     }
+    await assertStaffInScope(req, schoolId, staff._id);
 
     return successResponse(res, staff, 'Staff member retrieved successfully');
   } catch (error) {
@@ -159,6 +193,22 @@ const createStaff = async (req, res, next) => {
       }
     }
 
+    let finalDesigId = req.body.designationId || null;
+    let finalDesigName = designation || '';
+    if (finalDesigId) {
+      const desig = await Designation.findById(finalDesigId).lean();
+      if (desig) finalDesigName = desig.name;
+    } else if (finalDesigName) {
+      const desig = await Designation.findOne({
+        schoolId,
+        name: new RegExp(`^${finalDesigName.trim()}$`, 'i'),
+      }).lean();
+      if (desig) {
+        finalDesigId = desig._id;
+        finalDesigName = desig.name;
+      }
+    }
+
     let finalQualIds = Array.isArray(req.body.qualificationIds) ? req.body.qualificationIds : [];
     let finalQualStr = qualification || '';
     if (finalQualIds.length > 0) {
@@ -178,13 +228,19 @@ const createStaff = async (req, res, next) => {
       existing.lastName = finalLastName;
       existing.email = staffEmail;
       existing.phone = phone || '';
-      existing.designation = designation;
+      existing.designation = finalDesigName;
+      existing.designationId = finalDesigId;
       existing.departmentId = finalDeptId;
       existing.department = finalDeptName;
       existing.qualificationIds = finalQualIds;
       existing.qualification = finalQualStr;
       existing.experienceYears = Number(experienceYears) || 0;
       existing.isTeachingStaff = resolvedIsTeaching;
+      existing.assignedGradeIds = Array.isArray(req.body.assignedGradeIds) ? req.body.assignedGradeIds : [];
+      existing.isIncharge = Boolean(req.body.isIncharge) || false;
+      existing.inchargeDetails = {
+        gradeIds: Array.isArray(req.body.inchargeDetails?.gradeIds) ? req.body.inchargeDetails.gradeIds : [],
+      };
       existing.status = 'ACTIVE';
       staff = await existing.save();
     } else {
@@ -196,7 +252,8 @@ const createStaff = async (req, res, next) => {
         lastName: finalLastName,
         email: staffEmail,
         phone: phone || '',
-        designation,
+        designation: finalDesigName,
+        designationId: finalDesigId,
         departmentId: finalDeptId,
         department: finalDeptName,
         qualificationIds: finalQualIds,
@@ -204,6 +261,11 @@ const createStaff = async (req, res, next) => {
         experienceYears: Number(experienceYears) || 0,
         joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
         isTeachingStaff: resolvedIsTeaching,
+        assignedGradeIds: Array.isArray(req.body.assignedGradeIds) ? req.body.assignedGradeIds : [],
+        isIncharge: Boolean(req.body.isIncharge) || false,
+        inchargeDetails: {
+          gradeIds: Array.isArray(req.body.inchargeDetails?.gradeIds) ? req.body.inchargeDetails.gradeIds : [],
+        },
         status: 'ACTIVE',
       });
     }
@@ -211,6 +273,8 @@ const createStaff = async (req, res, next) => {
     const populatedStaff = await Staff.findById(staff._id)
       .populate('userId')
       .populate('departmentId', 'name code')
+      .populate('designationId', 'name code')
+      .populate('assignedGradeIds', 'name code')
       .populate('qualificationIds', 'name code level')
       .lean();
 
@@ -243,6 +307,7 @@ const updateStaff = async (req, res, next) => {
     if (!staff) {
       throw new NotFoundError('Staff member not found.');
     }
+    await assertStaffInScope(req, schoolId, id);
 
     const oldValues = staff.toObject();
     const updateData = { ...req.body };
@@ -254,6 +319,13 @@ const updateStaff = async (req, res, next) => {
     if (updateData.email !== undefined) staff.email = String(updateData.email).toLowerCase().trim();
     if (updateData.phone !== undefined) staff.phone = String(updateData.phone).trim();
     if (updateData.isTeachingStaff !== undefined) staff.isTeachingStaff = Boolean(updateData.isTeachingStaff);
+    if (Array.isArray(updateData.assignedGradeIds)) staff.assignedGradeIds = updateData.assignedGradeIds;
+    if (updateData.isIncharge !== undefined) staff.isIncharge = Boolean(updateData.isIncharge);
+    if (updateData.inchargeDetails !== undefined) {
+      staff.inchargeDetails = {
+        gradeIds: Array.isArray(updateData.inchargeDetails?.gradeIds) ? updateData.inchargeDetails.gradeIds : [],
+      };
+    }
 
     if (updateData.departmentId !== undefined) {
       if (updateData.departmentId) {
@@ -276,6 +348,30 @@ const updateStaff = async (req, res, next) => {
         staff.department = dept.name;
       } else {
         staff.department = updateData.department;
+      }
+    }
+
+    if (updateData.designationId !== undefined) {
+      if (updateData.designationId) {
+        const desig = await Designation.findById(updateData.designationId).lean();
+        if (desig) {
+          staff.designationId = desig._id;
+          staff.designation = desig.name;
+        }
+      } else {
+        staff.designationId = null;
+        if (updateData.designation === undefined) staff.designation = '';
+      }
+    } else if (updateData.designation) {
+      const desig = await Designation.findOne({
+        schoolId,
+        name: new RegExp(`^${updateData.designation.trim()}$`, 'i'),
+      }).lean();
+      if (desig) {
+        staff.designationId = desig._id;
+        staff.designation = desig.name;
+      } else {
+        staff.designation = updateData.designation;
       }
     }
 
@@ -311,6 +407,8 @@ const updateStaff = async (req, res, next) => {
     const updated = await Staff.findById(id)
       .populate('userId')
       .populate('departmentId', 'name code')
+      .populate('designationId', 'name code')
+      .populate('assignedGradeIds', 'name code')
       .populate('qualificationIds', 'name code level')
       .lean();
 
@@ -344,6 +442,7 @@ const deleteStaff = async (req, res, next) => {
     if (!staff) {
       throw new NotFoundError('Staff member not found.');
     }
+    await assertStaffInScope(req, schoolId, id);
 
     // Check if staff member is currently assigned as Class Teacher for any active section
     const activeSection = await Section.findOne({
@@ -391,6 +490,7 @@ const restoreStaff = async (req, res, next) => {
     if (!staff) {
       throw new NotFoundError('Staff member not found.');
     }
+    await assertStaffInScope(req, schoolId, id);
 
     const oldValues = staff.toObject();
     staff.status = 'ACTIVE';
