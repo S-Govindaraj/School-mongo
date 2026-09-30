@@ -126,7 +126,7 @@ router.use(authenticate);
 
 // --- School & Campus Routes ---
 router.get('/schools/profile', requirePermissions('school_view'), schoolController.getSchoolProfile);
-router.post('/schools/profile', requirePermissions('school_manage'), validate(schoolProfileSchema), schoolController.updateSchoolProfile);
+router.post('/schools/profile', requirePermissions('school_edit'), validate(schoolProfileSchema), schoolController.updateSchoolProfile);
 router.get('/campuses', requirePermissions('campus_view'), schoolController.getCampuses);
 router.post('/campuses', requirePermissions('campus_manage'), validate(campusSchema), schoolController.createCampus);
 router.patch('/campuses/:id', requirePermissions('campus_manage'), validate(updateCampusSchema), schoolController.updateCampus);

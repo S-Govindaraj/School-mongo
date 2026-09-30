@@ -117,6 +117,7 @@ const permissionsData = [
 
   // School & Campus Setup
   { id: 'school_view', module: 'School Setup', action: 'view', code: 'school_view', name: 'View School Profile', description: 'View school institution profile' },
+  { id: 'school_edit', module: 'School Setup', action: 'edit', code: 'school_edit', name: 'Edit School Profile', description: 'Modify school profile and configuration details' },
   { id: 'school_manage', module: 'School Setup', action: 'manage', code: 'school_manage', name: 'Manage School Profile', description: 'Update school profile and configuration' },
   { id: 'campus_view', module: 'School Setup', action: 'view', code: 'campus_view', name: 'View Campuses', description: 'View school campus list' },
   { id: 'campus_manage', module: 'School Setup', action: 'manage', code: 'campus_manage', name: 'Manage Campuses', description: 'Create, edit, delete school campuses' },

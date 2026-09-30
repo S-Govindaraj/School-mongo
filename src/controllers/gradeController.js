@@ -1,5 +1,6 @@
 const Grade = require('../models/Grade');
 const Section = require('../models/Section');
+const Period = require('../models/Period');
 const ClassSubject = require('../models/ClassSubject');
 const TeacherAssignment = require('../models/TeacherAssignment');
 const Enrollment = require('../models/Enrollment');
@@ -22,13 +23,17 @@ const getGrades = async (req, res, next) => {
 
     if (apiLevel === 'master') {
       const masterGrades = await Grade.find(filter)
-        .select('_id name code category')
+        .select('_id name code category sequenceOrder periods')
+        .populate('periods', '_id name code sequence startTime endTime type isBreak status')
         .sort({ sequenceOrder: 1, name: 1 })
         .lean();
       return successResponse(res, masterGrades, 'Grades retrieved successfully');
     }
 
-    const grades = await Grade.find(filter).sort({ sequenceOrder: 1, name: 1 }).lean();
+    const grades = await Grade.find(filter)
+      .populate('periods', '_id name code sequence startTime endTime type isBreak status')
+      .sort({ sequenceOrder: 1, name: 1 })
+      .lean();
 
     // Attach each grade's configured sections — one grouped query instead of
     // an N+1 lookup per grade, so the frontend never needs to fetch/join
@@ -61,7 +66,7 @@ const getGrades = async (req, res, next) => {
 const createGrade = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { name, code, category = 'Primary', sequenceOrder = 1, status: requestedStatus, sections = [] } = req.body;
+    const { name, code, category = 'Primary', sequenceOrder = 1, status: requestedStatus, sections = [], periods = [] } = req.body;
 
     const trimmedName = String(name || '').trim();
     if (!trimmedName) {
@@ -72,18 +77,13 @@ const createGrade = async (req, res, next) => {
       throw new ValidationError('Grade code is required.');
     }
 
-    const seqNum = Number(sequenceOrder);
-    if (!Number.isInteger(seqNum) || seqNum <= 0) {
-      throw new ValidationError('Display order must be a positive integer.');
+    const seqNum = Number(sequenceOrder ?? 0);
+    if (!Number.isInteger(seqNum) || seqNum < 0) {
+      throw new ValidationError('Display order must be a non-negative integer.');
     }
 
-    // Parallel duplicate checks: code + order
-    const [existingCode, existingOrder] = await Promise.all([
-      Grade.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } }),
-      Grade.findOne({ schoolId, sequenceOrder: seqNum, status: { $ne: 'ARCHIVED' } }),
-    ]);
+    const existingCode = await Grade.findOne({ schoolId, code: formattedCode, status: { $ne: 'ARCHIVED' } });
     if (existingCode) throw new ValidationError(`Grade code '${formattedCode}' already exists in this school.`);
-    if (existingOrder) throw new ValidationError(`Display order '${seqNum}' is already assigned to grade '${existingOrder.name}'.`);
 
     const status = requestedStatus === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
 
@@ -93,6 +93,7 @@ const createGrade = async (req, res, next) => {
       code: formattedCode,
       category,
       sequenceOrder: seqNum,
+      periods: Array.isArray(periods) ? periods : [],
       status,
     });
 
@@ -134,6 +135,7 @@ const createGrade = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
+    await grade.populate('periods', '_id name code sequence startTime endTime type isBreak status');
     const gradeData = { ...grade.toObject(), sections: createdSections };
     return successResponse(res, gradeData, 'Grade created successfully', 201);
   } catch (error) {
@@ -167,25 +169,17 @@ const updateGrade = async (req, res, next) => {
       grade.code = formattedCode;
     }
 
-    if (req.body.sequenceOrder !== undefined && Number(req.body.sequenceOrder) !== grade.sequenceOrder) {
+    if (req.body.sequenceOrder !== undefined && req.body.sequenceOrder !== null && req.body.sequenceOrder !== '') {
       const seqNum = Number(req.body.sequenceOrder);
-      if (!Number.isInteger(seqNum) || seqNum <= 0) {
-        throw new ValidationError('Display order must be a positive integer.');
-      }
-      const existing = await Grade.findOne({
-        _id: { $ne: id },
-        schoolId,
-        sequenceOrder: seqNum,
-        status: { $ne: 'ARCHIVED' },
-      });
-      if (existing) {
-        throw new ValidationError(`Display order '${seqNum}' is already assigned to grade '${existing.name}'.`);
+      if (!Number.isInteger(seqNum) || seqNum < 0) {
+        throw new ValidationError('Display order must be a non-negative integer.');
       }
       grade.sequenceOrder = seqNum;
     }
 
     if (req.body.name) grade.name = String(req.body.name).trim();
     if (req.body.category) grade.category = req.body.category;
+    if (Array.isArray(req.body.periods)) grade.periods = req.body.periods;
     if (req.body.status) grade.status = req.body.status;
 
     await grade.save();
@@ -275,6 +269,7 @@ const updateGrade = async (req, res, next) => {
       .sort({ name: 1 })
       .lean();
 
+    await grade.populate('periods', '_id name code sequence startTime endTime type isBreak status');
     const gradeData = { ...grade.toObject(), sections: updatedSections };
     return successResponse(res, gradeData, 'Grade updated successfully');
   } catch (error) {

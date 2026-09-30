@@ -7,6 +7,7 @@ const gradeSchema = new mongoose.Schema(
     code: { type: String, required: true, trim: true, uppercase: true, maxlength: 50 },
     category: { type: String, default: 'Primary', trim: true },
     sequenceOrder: { type: Number, required: true, min: 0, default: 1 },
+    periods: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Period' }],
     status: { type: String, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'], default: 'INACTIVE' },
   },
   { timestamps: true }
@@ -19,6 +20,6 @@ gradeSchema.pre('validate', function (next) {
 });
 
 gradeSchema.index({ schoolId: 1, code: 1 }, { unique: true });
-gradeSchema.index({ schoolId: 1, sequenceOrder: 1 }, { unique: true });
+gradeSchema.index({ schoolId: 1, sequenceOrder: 1 });
 
 module.exports = mongoose.model('Grade', gradeSchema);

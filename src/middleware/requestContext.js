@@ -19,7 +19,7 @@ const errorHandlerMiddleware = (err, req, res, next) => {
   let statusCode = err.statusCode || 500;
   let errorCode = err.errorCode || 'INTERNAL_SERVER_ERROR';
   let message = err.message || 'An unexpected error occurred';
-  let errors = err.errors || null;
+  let errors = err.errors || err.details || null;
 
   // Handle Mongoose specific errors gracefully as per Section 28
   if (err.name === 'CastError') {
@@ -27,19 +27,29 @@ const errorHandlerMiddleware = (err, req, res, next) => {
     errorCode = 'INVALID_ID';
     message = `Invalid ID format for parameter: ${err.path}`;
   } else if (err.name === 'ValidationError') {
-    statusCode = 400;
-    errorCode = 'VALIDATION_ERROR';
-    const fieldErrors = Object.values(err.errors || {}).map((e) => ({
-      field: e.path,
-      message: e.message,
-    }));
-    message = `Validation failed: ${fieldErrors.map((f) => `${f.field}: ${f.message}`).join(', ')}`;
-    errors = fieldErrors;
+    statusCode = err.statusCode || 400;
+    errorCode = err.errorCode || 'VALIDATION_ERROR';
+    if (Array.isArray(err.errors)) {
+      errors = err.errors;
+      message = err.message || (typeof err.errors[0] === 'string' ? err.errors[0] : 'Validation failed');
+    } else if (err.errors && typeof err.errors === 'object' && Object.values(err.errors).some((e) => e && (e.path || e.message))) {
+      const fieldErrors = Object.values(err.errors || {}).map((e) => ({
+        field: e?.path,
+        message: e?.message,
+      }));
+      message = `Validation failed: ${fieldErrors.map((f) => `${f.field}: ${f.message}`).join(', ')}`;
+      errors = fieldErrors;
+    } else if (err.errors) {
+      errors = Array.isArray(err.errors) ? err.errors : [err.errors];
+    }
   } else if (err.code === 11000 || err.code === 11001) {
     statusCode = 409;
     errorCode = 'DUPLICATE_RESOURCE';
-    const keys = Object.keys(err.keyPattern || {});
-    const val = err.keyValue ? Object.values(err.keyValue)[0] : '';
+    const writeErr = err.writeErrors?.[0] || err;
+    const keyPattern = writeErr.keyPattern || err.keyPattern || {};
+    const keyValue = writeErr.keyValue || err.keyValue || {};
+    const keys = Object.keys(keyPattern);
+    const val = keyValue ? Object.values(keyValue)[0] : '';
 
     if (keys.includes('isCurrent')) {
       message = 'Only one active academic year can be set for a school at a time.';
@@ -65,11 +75,12 @@ const errorHandlerMiddleware = (err, req, res, next) => {
         message = 'This class already has a timetable entry for the selected period.';
       } else if (keys.includes('teacherId')) {
         message = 'This teacher is already assigned during the selected period.';
-      } else if (keys.includes('roomNumber')) {
+      } else if (keys.includes('roomNumber') || keys.includes('roomId')) {
         message = 'This room is already occupied during the selected period.';
       } else {
         message = 'A conflicting timetable entry already exists.';
       }
+      if (!errors) errors = [message];
     } else if (err.message && err.message.includes('attendancerecords')) {
       message = 'Attendance has already been recorded for this student.';
     } else {

@@ -142,6 +142,7 @@ const gradeSchema = z.object({
   displayName: z.string().trim().optional(),
   category: z.string().trim().default('Primary'),
   sequenceOrder: z.number().int('Display order must be an integer').min(0, 'Display order must be a non-negative integer').default(1),
+  periods: z.array(z.string()).optional().default([]),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).default('INACTIVE'),
 });
 

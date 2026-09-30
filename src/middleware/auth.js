@@ -81,6 +81,7 @@ const PERMISSION_ALIASES = {
   // Primary Underscore Permissions mapped to legacy dot and action aliases
   'school_view': ['school.view', 'school_view'],
   'school_manage': ['school.manage', 'school_edit', 'school_view', 'school.view'],
+  'school_edit': ['school_edit', 'school_manage', 'school.manage'],
   'campus_view': ['campus.view', 'campus_view'],
   'campus_manage': ['campus.manage', 'campus_create', 'campus_edit', 'campus_delete', 'campus_view', 'campus.view'],
   'academic_config_view': ['academic_config_view', 'academic_year_view', 'academic_term_view', 'grade_view', 'section_view', 'subject_view', 'class_subject_view', 'teacher_assignment_view', 'academic_year_manage', 'academic_setup'],
