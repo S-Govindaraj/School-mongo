@@ -13,6 +13,7 @@ const { withTransactionOrFallback } = require('../utils/withTransaction');
 const { assertSectionInScope, applyScopeToFilter } = require('../services/attendanceScopeService');
 const { createAbsenceNotifications } = require('../services/attendanceNotificationHelper');
 const { upsertPeriodEntry, getAttendanceDay } = require('../services/attendanceDayService');
+const SchoolSetting = require('../models/SchoolSetting');
 
 /**
  * Single-collection attendance model: one AttendanceDay document per
@@ -308,6 +309,25 @@ const markBulkAttendance = async (req, res, next) => {
 
     const targetDate = new Date(date);
     const normalizedPeriodId = periodId || null;
+
+    // Validate backdated attendance policy from SchoolSetting
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const markDate = new Date(date);
+    markDate.setHours(0, 0, 0, 0);
+
+    if (markDate < today) {
+      const schoolSetting = await SchoolSetting.findOne({ schoolId }).lean();
+      if (schoolSetting && schoolSetting.attendance) {
+        if (schoolSetting.attendance.allowBackdated === false) {
+          throw new ValidationError('Backdated attendance recording is disabled in School Settings.');
+        }
+        const diffDays = Math.ceil((today.getTime() - markDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (schoolSetting.attendance.backdateLimitDays && diffDays > schoolSetting.attendance.backdateLimitDays) {
+          throw new ValidationError(`Backdated attendance is restricted to ${schoolSetting.attendance.backdateLimitDays} day(s) by School Settings (attempted: ${diffDays} days).`);
+        }
+      }
+    }
 
     const allStatuses = await AttendanceStatus.find({ schoolId, status: 'ACTIVE' });
     const statusMap = new Map(allStatuses.map((s) => [String(s._id), s]));

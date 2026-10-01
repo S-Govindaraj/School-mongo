@@ -12,7 +12,7 @@ const { logAuditEvent } = require('../middleware/auditLogger');
 const getEnrollments = async (req, res, next) => {
   try {
     const schoolId = req.schoolContext?.schoolId;
-    const { studentId = '', academicYearId = '', gradeId = '', sectionId = '', page = 1, limit = 50 } = req.query;
+    const { studentId = '', academicYearId = '', gradeId = '', sectionId = '', isCurrent = '', page = 1, limit = 50 } = req.query;
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 50;
@@ -23,6 +23,7 @@ const getEnrollments = async (req, res, next) => {
     if (academicYearId) query.academicYearId = academicYearId;
     if (gradeId) query.gradeId = gradeId;
     if (sectionId) query.sectionId = sectionId;
+    if (isCurrent !== '') query.isCurrent = isCurrent === 'true';
 
     const [totalRecords, enrollments] = await Promise.all([
       Enrollment.countDocuments(query),
@@ -175,9 +176,153 @@ const promoteStudent = async (req, res, next) => {
   }
 };
 
+const bulkPromoteStudents = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const {
+      sourceAcademicYearId,
+      sourceGradeId,
+      sourceSectionId,
+      targetAcademicYearId,
+      targetGradeId,
+      targetSectionId,
+      studentIds = [],
+      enrollmentIds = [],
+      promotionStatus = 'PROMOTED',
+      remarks = '',
+    } = req.body;
+
+    if (!targetAcademicYearId) throw new ValidationError('Target Academic Year is required');
+    if (!targetGradeId) throw new ValidationError('Target Grade is required');
+    if (!targetSectionId) throw new ValidationError('Target Section is required');
+
+    const [targetAY, targetGrade, targetSection] = await Promise.all([
+      AcademicYear.findOne({ _id: targetAcademicYearId, schoolId }),
+      Grade.findOne({ _id: targetGradeId, schoolId }),
+      Section.findOne({ _id: targetSectionId, gradeId: targetGradeId, schoolId }),
+    ]);
+
+    if (!targetAY) throw new ValidationError('Invalid target Academic Year');
+    if (!targetGrade) throw new ValidationError('Invalid target Grade');
+    if (!targetSection) throw new ValidationError('Invalid target Section');
+
+    // Build query for current active enrollments
+    const query = { schoolId, isCurrent: true, status: { $ne: 'ARCHIVED' } };
+    if (sourceAcademicYearId) query.academicYearId = sourceAcademicYearId;
+    if (sourceGradeId) query.gradeId = sourceGradeId;
+    if (sourceSectionId) query.sectionId = sourceSectionId;
+
+    if (Array.isArray(enrollmentIds) && enrollmentIds.length > 0) {
+      query._id = { $in: enrollmentIds };
+    } else if (Array.isArray(studentIds) && studentIds.length > 0) {
+      query.studentId = { $in: studentIds };
+    }
+
+    const currentEnrollments = await Enrollment.find(query)
+      .populate('studentId', 'firstName lastName studentNumber admissionNumber status')
+      .populate('gradeId', 'name')
+      .populate('sectionId', 'name')
+      .lean();
+
+    if (!currentEnrollments || currentEnrollments.length === 0) {
+      throw new ValidationError('No active enrollments found matching the selected source section/students');
+    }
+
+    const promotedRecords = [];
+    const skippedRecords = [];
+
+    for (const curr of currentEnrollments) {
+      const studentId = curr.studentId?._id || curr.studentId;
+      if (!studentId) continue;
+
+      // Prevent duplicate active enrollment in the target academic year
+      const existingInTarget = await Enrollment.findOne({
+        schoolId,
+        studentId,
+        academicYearId: targetAcademicYearId,
+        isCurrent: true,
+      });
+
+      if (existingInTarget) {
+        skippedRecords.push({
+          studentId,
+          studentName: curr.studentId?.firstName ? `${curr.studentId.firstName} ${curr.studentId.lastName}` : String(studentId),
+          reason: 'Already actively enrolled in target academic year',
+        });
+        continue;
+      }
+
+      // Mark current enrollment as historical
+      await Enrollment.updateOne(
+        { _id: curr._id, schoolId },
+        { isCurrent: false, status: promotionStatus }
+      );
+
+      // Create new target enrollment
+      const newEnrollment = await Enrollment.create({
+        schoolId,
+        studentId,
+        academicYearId: targetAcademicYearId,
+        gradeId: targetGradeId,
+        sectionId: targetSectionId,
+        status: 'ENROLLED',
+        isCurrent: true,
+      });
+
+      // Write to AcademicHistory
+      const defaultRemarks = remarks || `Promoted from ${curr.gradeId?.name || 'Grade'} - ${curr.sectionId?.name || 'Section'} to ${targetGrade.name} - ${targetSection.name}`;
+      await AcademicHistory.create({
+        schoolId,
+        studentId,
+        academicYearId: targetAcademicYearId,
+        gradeId: targetGradeId,
+        sectionId: targetSectionId,
+        enrollmentId: newEnrollment._id,
+        promotionStatus,
+        remarks: defaultRemarks,
+      });
+
+      // Ensure Student status is ACTIVE
+      await Student.updateOne({ _id: studentId, schoolId }, { status: 'ACTIVE' });
+
+      promotedRecords.push({
+        enrollmentId: newEnrollment._id,
+        studentId,
+        studentName: curr.studentId?.firstName ? `${curr.studentId.firstName} ${curr.studentId.lastName}` : String(studentId),
+      });
+    }
+
+    await logAuditEvent(req, 'BULK_PROMOTE', 'ENROLLMENT', targetSection._id, null, {
+      sourceSectionId,
+      targetSectionId,
+      totalSelected: currentEnrollments.length,
+      promotedCount: promotedRecords.length,
+      skippedCount: skippedRecords.length,
+    });
+
+    return successResponse(
+      res,
+      {
+        total: currentEnrollments.length,
+        promotedCount: promotedRecords.length,
+        skippedCount: skippedRecords.length,
+        promotedRecords,
+        skippedRecords,
+        targetGrade: targetGrade.name,
+        targetSection: targetSection.name,
+        targetAcademicYear: targetAY.name,
+      },
+      `Successfully promoted ${promotedRecords.length} student(s) to ${targetGrade.name} - ${targetSection.name}`
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getEnrollments,
   createEnrollment,
   promoteStudent,
   promoteStudents: promoteStudent,
+  bulkPromoteStudents,
 };

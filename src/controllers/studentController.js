@@ -6,6 +6,9 @@ const Enrollment = require('../models/Enrollment');
 const StudentDocument = require('../models/StudentDocument');
 const AcademicHistory = require('../models/AcademicHistory');
 const AuditLog = require('../models/AuditLog');
+const Grade = require('../models/Grade');
+const Section = require('../models/Section');
+const AcademicYear = require('../models/AcademicYear');
 const { generateSequenceNumber } = require('../utils/sequenceUtils');
 const { successResponse } = require('../utils/response');
 const { NotFoundError, ValidationError } = require('../utils/errors');
@@ -448,11 +451,276 @@ const restoreStudent = async (req, res, next) => {
   }
 };
 
+const bulkImportStudents = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const {
+      students = [],
+      defaultAcademicYearId = '',
+      defaultGradeId = '',
+      defaultSectionId = '',
+    } = req.body;
+
+    if (!Array.isArray(students) || students.length === 0) {
+      throw new ValidationError('No student records provided for bulk import');
+    }
+
+    if (students.length > 500) {
+      throw new ValidationError('Maximum 500 student records can be imported in a single batch');
+    }
+
+    // Pre-load all grades, sections, and academic years for this school
+    const [allGrades, allSections, allAcademicYears] = await Promise.all([
+      Grade.find({ schoolId }).lean(),
+      Section.find({ schoolId }).lean(),
+      AcademicYear.find({ schoolId }).lean(),
+    ]);
+
+    const activeAcademicYear = allAcademicYears.find((y) => y.isCurrent) || allAcademicYears[0];
+
+    const results = {
+      total: students.length,
+      importedCount: 0,
+      skippedCount: 0,
+      importedStudents: [],
+      errors: [],
+    };
+
+    // Sanitize string helpers: clean extra spaces
+    const sanitizeText = (val) => {
+      if (val === undefined || val === null) return '';
+      return String(val).trim().replace(/\s+/g, ' ');
+    };
+
+    const sanitizePhone = (val) => {
+      if (!val) return '';
+      return String(val).replace(/[\s\-\(\)\+]/g, '').trim();
+    };
+
+    for (let i = 0; i < students.length; i++) {
+      const raw = students[i];
+      const rowNum = i + 1;
+
+      const firstName = sanitizeText(raw.firstName);
+      const middleName = sanitizeText(raw.middleName);
+      const lastName = sanitizeText(raw.lastName);
+      const rawDob = sanitizeText(raw.dob || raw.dateOfBirth);
+      let gender = sanitizeText(raw.gender).toUpperCase();
+      let bloodGroup = sanitizeText(raw.bloodGroup).toUpperCase();
+      const nationality = sanitizeText(raw.nationality) || 'Indian';
+      const email = sanitizeText(raw.email).toLowerCase();
+      const phone = sanitizePhone(raw.phone);
+      const previousSchool = sanitizeText(raw.previousSchool);
+      const customAdmissionNumber = sanitizeText(raw.admissionNumber);
+      const rollNumber = sanitizeText(raw.rollNumber);
+
+      const street = sanitizeText(raw.street || raw.address?.street);
+      const city = sanitizeText(raw.city || raw.address?.city);
+      const state = sanitizeText(raw.state || raw.address?.state);
+      const postalCode = sanitizePhone(raw.postalCode || raw.address?.postalCode);
+      const country = sanitizeText(raw.country || raw.address?.country) || 'India';
+
+      const guardianName = sanitizeText(raw.guardianName);
+      let guardianRelationship = sanitizeText(raw.guardianRelationship).toUpperCase() || 'FATHER';
+      const guardianPhone = sanitizePhone(raw.guardianPhone);
+      const guardianEmail = sanitizeText(raw.guardianEmail).toLowerCase();
+
+      // Row Validation
+      const rowErrors = [];
+      if (!firstName) rowErrors.push('First Name is required');
+      if (!lastName) rowErrors.push('Last Name is required');
+
+      // Gender normalization
+      if (!['MALE', 'FEMALE', 'OTHER'].includes(gender)) {
+        if (gender === 'M' || gender === 'BOY') gender = 'MALE';
+        else if (gender === 'F' || gender === 'GIRL') gender = 'FEMALE';
+        else gender = 'MALE';
+      }
+
+      // Blood group normalization
+      if (!['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'UNKNOWN'].includes(bloodGroup)) {
+        bloodGroup = 'UNKNOWN';
+      }
+
+      // DOB validation
+      let dobDate = null;
+      if (!rawDob) {
+        rowErrors.push('Date of Birth is required');
+      } else {
+        dobDate = new Date(rawDob);
+        if (isNaN(dobDate.getTime())) {
+          rowErrors.push('Invalid Date of Birth format');
+        }
+      }
+
+      // Prevent duplicate admission numbers
+      if (customAdmissionNumber) {
+        const existingStudent = await Student.findOne({ schoolId, admissionNumber: customAdmissionNumber });
+        if (existingStudent) {
+          rowErrors.push(`Admission Number "${customAdmissionNumber}" already exists`);
+        }
+      }
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: `${firstName} ${lastName}`.trim() || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      // Generate sequence numbers if not custom provided
+      const studentNumber = await generateSequenceNumber(schoolId, 'STUDENT');
+      const admissionNumber = customAdmissionNumber || (await generateSequenceNumber(schoolId, 'ADMISSION'));
+
+      // Create student
+      const student = await Student.create({
+        schoolId,
+        studentNumber,
+        admissionNumber,
+        rollNumber,
+        firstName,
+        middleName,
+        lastName,
+        dob: dobDate,
+        gender,
+        bloodGroup,
+        nationality,
+        email,
+        phone,
+        address: {
+          street,
+          city,
+          state,
+          postalCode,
+          country,
+        },
+        previousSchool,
+        status: 'ACTIVE',
+      });
+
+      // Create & link guardian if present
+      if (guardianName || guardianPhone) {
+        let guardian = null;
+        if (guardianPhone) {
+          guardian = await Guardian.findOne({ schoolId, phone: guardianPhone, status: 'ACTIVE' });
+        }
+        if (!guardian && (guardianName || guardianPhone)) {
+          guardian = await Guardian.create({
+            schoolId,
+            name: guardianName || 'Parent / Guardian',
+            relationship: guardianRelationship,
+            phone: guardianPhone || '',
+            email: guardianEmail || '',
+            address: street || '',
+            isPrimary: true,
+            isEmergencyContact: true,
+          });
+        }
+        if (guardian) {
+          await StudentGuardian.create({
+            schoolId,
+            studentId: student._id,
+            guardianId: guardian._id,
+            relationship: guardianRelationship,
+            isPrimary: true,
+            isEmergencyContact: true,
+          });
+        }
+      }
+
+      // Resolve Grade and Section for placement enrollment
+      let resolvedGradeId = defaultGradeId || null;
+      let resolvedSectionId = defaultSectionId || null;
+      let resolvedAyId = defaultAcademicYearId || activeAcademicYear?._id || null;
+
+      // Check if row specifies grade by name or ID
+      const rawGrade = sanitizeText(raw.grade || raw.gradeLevel || raw.gradeName || raw.standard);
+      if (rawGrade) {
+        const foundGrade = allGrades.find(
+          (g) => String(g._id) === rawGrade || g.name.toLowerCase() === rawGrade.toLowerCase() || g.code?.toLowerCase() === rawGrade.toLowerCase()
+        );
+        if (foundGrade) resolvedGradeId = foundGrade._id;
+      }
+
+      // Check if row specifies section by name or ID
+      const rawSection = sanitizeText(raw.section || raw.sectionName || raw.classSection);
+      if (rawSection) {
+        const foundSection = allSections.find(
+          (s) => (String(s._id) === rawSection || s.name.toLowerCase() === rawSection.toLowerCase()) &&
+                 (!resolvedGradeId || String(s.gradeId) === String(resolvedGradeId))
+        );
+        if (foundSection) {
+          resolvedSectionId = foundSection._id;
+          if (!resolvedGradeId) resolvedGradeId = foundSection.gradeId;
+        }
+      }
+
+      // If both Grade and Section are resolved, create active enrollment
+      let enrollment = null;
+      if (resolvedGradeId && resolvedSectionId && resolvedAyId) {
+        enrollment = await Enrollment.create({
+          schoolId,
+          studentId: student._id,
+          academicYearId: resolvedAyId,
+          gradeId: resolvedGradeId,
+          sectionId: resolvedSectionId,
+          rollNumber: rollNumber || '',
+          status: 'ENROLLED',
+          isCurrent: true,
+        });
+
+        await AcademicHistory.create({
+          schoolId,
+          studentId: student._id,
+          academicYearId: resolvedAyId,
+          gradeId: resolvedGradeId,
+          sectionId: resolvedSectionId,
+          enrollmentId: enrollment._id,
+          promotionStatus: 'PROMOTED',
+          remarks: 'Imported via Student Master Bulk Import',
+        });
+      }
+
+      results.importedCount++;
+      results.importedStudents.push({
+        _id: student._id,
+        id: String(student._id),
+        studentNumber: student.studentNumber,
+        admissionNumber: student.admissionNumber,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        gender: student.gender,
+        status: student.status,
+        enrollmentId: enrollment?._id || null,
+      });
+    }
+
+    await logAuditEvent(req, 'BULK_IMPORT', 'STUDENT', null, null, {
+      totalProvided: students.length,
+      importedCount: results.importedCount,
+      skippedCount: results.skippedCount,
+    });
+
+    return successResponse(
+      res,
+      results,
+      `Successfully imported ${results.importedCount} student(s)${results.skippedCount > 0 ? ` (${results.skippedCount} skipped due to errors)` : ''}`,
+      201
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getStudents,
   getStudent360,
   getStudentById: getStudent360,
   createStudent,
+  bulkImportStudents,
   updateStudent,
   updateStudentStatus,
   deleteStudent,

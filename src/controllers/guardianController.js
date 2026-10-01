@@ -279,6 +279,210 @@ const restoreGuardian = async (req, res, next) => {
   }
 };
 
+/**
+ * Bulk Import Parents & Guardians
+ * Upserts guardian by phone number and connects guardian to student by studentNumber (e.g. STU-2026-00335)
+ */
+const bulkImportGuardians = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { guardians = [] } = req.body;
+
+    if (!Array.isArray(guardians) || guardians.length === 0) {
+      throw new ValidationError('No guardian/parent records provided for bulk import');
+    }
+
+    if (guardians.length > 500) {
+      throw new ValidationError('Maximum 500 guardian records can be imported in a single batch');
+    }
+
+    const results = {
+      total: guardians.length,
+      importedCount: 0,
+      skippedCount: 0,
+      importedGuardians: [],
+      errors: [],
+    };
+
+    const sanitizeText = (val) => {
+      if (val === undefined || val === null) return '';
+      return String(val).trim().replace(/\s+/g, ' ');
+    };
+
+    const sanitizePhone = (val) => {
+      if (!val) return '';
+      return String(val).replace(/[\s\-\(\)\+]/g, '').trim();
+    };
+
+    for (let i = 0; i < guardians.length; i++) {
+      const raw = guardians[i];
+      const rowNum = i + 1;
+
+      const name = sanitizeText(raw.name || raw.parentName || raw.guardianName);
+      let relationship = sanitizeText(raw.relationship || raw.guardianRelationship).toUpperCase();
+      const phone = sanitizePhone(raw.phone || raw.mobileNumber || raw.mobile);
+      const email = sanitizeText(raw.email).toLowerCase();
+      const occupation = sanitizeText(raw.occupation);
+      const address = sanitizeText(raw.address);
+      const rawStudentNumber = sanitizeText(raw.studentNumber || raw.studentId || raw.admissionNumber || raw.wardId);
+
+      const rawIsPrimary = raw.isPrimary;
+      const isPrimary =
+        rawIsPrimary === true ||
+        rawIsPrimary === 'true' ||
+        rawIsPrimary === 1 ||
+        rawIsPrimary === '1' ||
+        String(rawIsPrimary).toUpperCase() === 'YES' ||
+        rawIsPrimary === undefined;
+
+      const rawIsEmergency = raw.isEmergencyContact;
+      const isEmergencyContact =
+        rawIsEmergency === true ||
+        rawIsEmergency === 'true' ||
+        rawIsEmergency === 1 ||
+        rawIsEmergency === '1' ||
+        String(rawIsEmergency).toUpperCase() === 'YES' ||
+        rawIsEmergency === undefined;
+
+      const rowErrors = [];
+      if (!name) {
+        rowErrors.push('Parent / Guardian Name is required');
+      } else if (name.length < 2) {
+        rowErrors.push('Parent Name must be at least 2 characters');
+      }
+
+      if (!phone) {
+        rowErrors.push('Mobile Phone Number is required');
+      } else if (!/^\d{10}$/.test(phone)) {
+        rowErrors.push('Mobile Phone Number must be exactly 10 digits');
+      }
+
+      // Relationship validation & normalization
+      if (!['FATHER', 'MOTHER', 'GUARDIAN', 'OTHER'].includes(relationship)) {
+        if (relationship === 'DAD' || relationship === 'PAPPA' || relationship === 'APPA') relationship = 'FATHER';
+        else if (relationship === 'MOM' || relationship === 'AMMA') relationship = 'MOTHER';
+        else relationship = 'GUARDIAN';
+      }
+
+      // Email validation if provided
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        rowErrors.push('Invalid email address format');
+      }
+
+      // Resolve linked student (e.g. STU-2026-00335)
+      let student = null;
+      if (rawStudentNumber) {
+        student = await Student.findOne({
+          schoolId,
+          $or: [
+            { studentNumber: { $regex: new RegExp(`^${rawStudentNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+            { admissionNumber: { $regex: new RegExp(`^${rawStudentNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+          ],
+        });
+
+        if (!student) {
+          rowErrors.push(`Student with ID / Admission Number "${rawStudentNumber}" not found in system`);
+        }
+      }
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: name || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      // Upsert Guardian by schoolId and phone
+      let guardian = await Guardian.findOne({ schoolId, phone });
+      if (guardian) {
+        guardian.name = name;
+        guardian.relationship = relationship;
+        if (email) guardian.email = email;
+        if (occupation) guardian.occupation = occupation;
+        if (address) guardian.address = address;
+        guardian.isPrimary = isPrimary;
+        guardian.isEmergencyContact = isEmergencyContact;
+        guardian.status = 'ACTIVE';
+        await guardian.save();
+      } else {
+        guardian = await Guardian.create({
+          schoolId,
+          name,
+          relationship,
+          phone,
+          email,
+          occupation,
+          address,
+          isPrimary,
+          isEmergencyContact,
+          status: 'ACTIVE',
+        });
+      }
+
+      // If student was resolved, connect parent and student via StudentGuardian
+      if (student) {
+        await StudentGuardian.findOneAndUpdate(
+          { schoolId, studentId: student._id, guardianId: guardian._id },
+          {
+            relationship,
+            isPrimary,
+            isEmergencyContact,
+          },
+          { upsert: true, new: true }
+        );
+
+        // If marked as emergency contact, update student's emergency contact record
+        if (isEmergencyContact) {
+          await Student.updateOne(
+            { _id: student._id, schoolId },
+            {
+              $set: {
+                'emergencyContact.name': guardian.name,
+                'emergencyContact.relationship': relationship,
+                'emergencyContact.phone': guardian.phone,
+              },
+            }
+          );
+        }
+      }
+
+      results.importedCount++;
+      results.importedGuardians.push({
+        id: guardian._id,
+        name: guardian.name,
+        relationship: guardian.relationship,
+        phone: guardian.phone,
+        linkedStudent: student ? (student.studentNumber || student.admissionNumber) : null,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'Guardian',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} guardians`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getGuardians,
   getGuardianById,
@@ -288,4 +492,6 @@ module.exports = {
   restoreGuardian,
   linkGuardian,
   linkGuardianToStudent: linkGuardian,
+  bulkImportGuardians,
 };
+

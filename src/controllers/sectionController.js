@@ -531,10 +531,175 @@ const restoreSection = async (req, res, next) => {
   }
 };
 
+const bulkImportSections = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const sectionRecords = req.body.sections;
+
+    if (!Array.isArray(sectionRecords) || sectionRecords.length === 0) {
+      throw new ValidationError('A non-empty "sections" array is required.');
+    }
+
+    const [grades, staffMembers, rooms] = await Promise.all([
+      Grade.find({ schoolId }).lean(),
+      Staff.find({ schoolId }).lean(),
+      Room.find({ schoolId }).lean(),
+    ]);
+
+    const gradeMap = new Map();
+    grades.forEach((g) => {
+      gradeMap.set(g._id.toString(), g);
+      gradeMap.set(g.code.toLowerCase().trim(), g);
+      gradeMap.set(g.name.toLowerCase().trim(), g);
+    });
+
+    const staffMap = new Map();
+    staffMembers.forEach((st) => {
+      staffMap.set(st._id.toString(), st);
+      if (st.employeeId) staffMap.set(st.employeeId.toLowerCase().trim(), st);
+      const fullName = `${st.firstName || ''} ${st.lastName || ''}`.trim() || st.name || '';
+      if (fullName) staffMap.set(fullName.toLowerCase().trim(), st);
+    });
+
+    const roomMap = new Map();
+    rooms.forEach((r) => {
+      roomMap.set(r._id.toString(), r);
+      if (r.name) roomMap.set(r.name.toLowerCase().trim(), r);
+      if (r.roomNumber) roomMap.set(r.roomNumber.toLowerCase().trim(), r);
+    });
+
+    const results = {
+      total: sectionRecords.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedSections: [],
+    };
+
+    const seenGradeAndCodeInBatch = new Set();
+
+    for (let i = 0; i < sectionRecords.length; i++) {
+      const row = sectionRecords[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const rawGrade = String(row.grade || row.gradeId || '').trim();
+      const matchedGrade = rawGrade ? gradeMap.get(rawGrade.toLowerCase()) : null;
+      if (!matchedGrade) {
+        rowErrors.push(`Grade "${rawGrade}" not found in this school`);
+      }
+
+      const rawName = String(row.name || '').trim();
+      if (!rawName) {
+        rowErrors.push('Section Name is required');
+      }
+
+      const rawCode = String(row.code || rawName || '').trim().toUpperCase();
+      if (!rawCode) {
+        rowErrors.push('Section Code is required');
+      }
+
+      if (matchedGrade && rawCode) {
+        const batchKey = `${matchedGrade._id.toString()}:${rawCode}`;
+        if (seenGradeAndCodeInBatch.has(batchKey)) {
+          rowErrors.push(`Duplicate Section Code "${rawCode}" for Grade in same import sheet`);
+        } else {
+          seenGradeAndCodeInBatch.add(batchKey);
+        }
+      }
+
+      const capacity = Number(row.capacity) >= 1 ? Number(row.capacity) : 40;
+      const roomStr = String(row.room || '').trim();
+      const matchedRoom = roomStr ? roomMap.get(roomStr.toLowerCase()) : null;
+
+      const rawTeacher = String(row.classTeacher || row.classTeacherId || '').trim();
+      const matchedStaff = rawTeacher ? staffMap.get(rawTeacher.toLowerCase()) : null;
+
+      const status = ['ACTIVE', 'INACTIVE'].includes(String(row.status || '').toUpperCase())
+        ? String(row.status).toUpperCase()
+        : 'ACTIVE';
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: rawName || rawCode || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      let section = await Section.findOne({
+        schoolId,
+        gradeId: matchedGrade._id,
+        code: rawCode,
+      });
+
+      if (section) {
+        section.name = rawName;
+        section.capacity = capacity;
+        section.room = roomStr;
+        if (matchedRoom) section.roomId = matchedRoom._id;
+        if (matchedStaff) section.classTeacherId = matchedStaff._id;
+        section.status = status;
+        await section.save();
+      } else {
+        section = await Section.create({
+          schoolId,
+          gradeId: matchedGrade._id,
+          name: rawName,
+          code: rawCode,
+          capacity,
+          room: roomStr,
+          roomId: matchedRoom?._id || null,
+          classTeacherId: matchedStaff?._id || null,
+          status,
+        });
+      }
+
+      results.importedCount++;
+      results.importedSections.push({
+        id: section._id,
+        gradeId: section.gradeId,
+        grade: matchedGrade.name,
+        name: section.name,
+        code: section.code,
+        capacity: section.capacity,
+        room: section.room,
+        status: section.status,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'Section',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} sections`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSections,
   createSection,
   updateSection,
   deleteSection,
   restoreSection,
+  bulkImportSections,
 };
+

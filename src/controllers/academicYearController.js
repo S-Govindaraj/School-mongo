@@ -476,6 +476,154 @@ const restoreAcademicYear = async (req, res, next) => {
   }
 };
 
+const bulkImportAcademicYears = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const yearRecords = req.body.academicYears;
+
+    if (!Array.isArray(yearRecords) || yearRecords.length === 0) {
+      throw new ValidationError('A non-empty "academicYears" array is required.');
+    }
+
+    const results = {
+      total: yearRecords.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedAcademicYears: [],
+    };
+
+    const seenCodesInBatch = new Set();
+
+    for (let i = 0; i < yearRecords.length; i++) {
+      const row = yearRecords[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const rawCode = String(row.code || row.name || '').trim();
+      let canonicalCode = '';
+      if (!rawCode) {
+        rowErrors.push('Academic year code or name is required (e.g. 2026-2027)');
+      } else {
+        const match = rawCode.match(/^(\d{4})\s*-\s*(\d{4})$/);
+        if (!match) {
+          rowErrors.push(`Invalid academic year format "${rawCode}". Use YYYY-YYYY (e.g. 2026-2027)`);
+        } else {
+          const start = parseInt(match[1], 10);
+          const end = parseInt(match[2], 10);
+          if (end !== start + 1) {
+            rowErrors.push(`Ending year must be exactly one year after starting year (e.g. ${start}-${start + 1})`);
+          } else {
+            canonicalCode = `${start}-${end}`;
+            if (seenCodesInBatch.has(canonicalCode)) {
+              rowErrors.push(`Duplicate academic year code "${canonicalCode}" within same import sheet`);
+            } else {
+              seenCodesInBatch.add(canonicalCode);
+            }
+          }
+        }
+      }
+
+      const rawName = String(row.name || canonicalCode || '').trim();
+
+      const startDateVal = row.startDate ? new Date(row.startDate) : null;
+      const endDateVal = row.endDate ? new Date(row.endDate) : null;
+
+      if (!startDateVal || isNaN(startDateVal.getTime())) {
+        rowErrors.push('Valid start date is required (YYYY-MM-DD)');
+      }
+      if (!endDateVal || isNaN(endDateVal.getTime())) {
+        rowErrors.push('Valid end date is required (YYYY-MM-DD)');
+      }
+      if (startDateVal && endDateVal && !isNaN(startDateVal.getTime()) && !isNaN(endDateVal.getTime())) {
+        if (endDateVal <= startDateVal) {
+          rowErrors.push('End date must be after start date');
+        }
+      }
+
+      const isCurrent =
+        row.isCurrent === true ||
+        String(row.isCurrent || '').toUpperCase() === 'YES' ||
+        String(row.isCurrent || '').toUpperCase() === 'TRUE';
+
+      const status = ['ACTIVE', 'INACTIVE'].includes(String(row.status || '').toUpperCase())
+        ? String(row.status).toUpperCase()
+        : (isCurrent ? 'ACTIVE' : 'INACTIVE');
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: rawName || canonicalCode || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      let year = await AcademicYear.findOne({ schoolId, code: canonicalCode });
+
+      if (isCurrent) {
+        await AcademicYear.updateMany(
+          { schoolId, code: { $ne: canonicalCode } },
+          { $set: { isCurrent: false } }
+        );
+      }
+
+      if (year) {
+        year.name = rawName;
+        year.startDate = startDateVal;
+        year.endDate = endDateVal;
+        year.isCurrent = isCurrent;
+        year.status = status;
+        await year.save();
+      } else {
+        year = await AcademicYear.create({
+          schoolId,
+          name: rawName,
+          code: canonicalCode,
+          startDate: startDateVal,
+          endDate: endDateVal,
+          isCurrent,
+          status,
+        });
+      }
+
+      results.importedCount++;
+      results.importedAcademicYears.push({
+        id: year._id,
+        name: year.name,
+        code: year.code,
+        startDate: year.startDate,
+        endDate: year.endDate,
+        isCurrent: year.isCurrent,
+        status: year.status,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'AcademicYear',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} academic years`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAcademicYears,
   getCurrentAcademicYear,
@@ -484,4 +632,6 @@ module.exports = {
   setCurrentAcademicYear,
   deleteAcademicYear,
   restoreAcademicYear,
+  bulkImportAcademicYears,
 };
+

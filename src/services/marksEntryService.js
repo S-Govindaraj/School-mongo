@@ -1,5 +1,6 @@
 const examRepository = require('../repositories/examRepository');
 const { NotFoundError, ValidationError } = require('../utils/errors');
+const SchoolSetting = require('../models/SchoolSetting');
 
 const requireExamSubject = async (schoolId, examSubjectId) => {
   const examSubject = await examRepository.findExamSubjectById(schoolId, examSubjectId);
@@ -77,12 +78,31 @@ class MarksEntryService {
 
     const isSplit = !!examSubject.hasTheoryPractical;
 
+    // Check decimal marks policy from SchoolSetting
+    const schoolSetting = await SchoolSetting.findOne({ schoolId }).lean();
+    const allowDecimals = schoolSetting?.examination?.allowDecimalMarks ?? false;
+
     const errors = [];
     rows.forEach((row) => {
       const hasTheoryOrPractical = (row.theoryMarksObtained !== undefined && row.theoryMarksObtained !== null)
         || (row.practicalMarksObtained !== undefined && row.practicalMarksObtained !== null);
       const hasFlatMarks = row.marksObtained !== undefined && row.marksObtained !== null;
       const isPresentRow = !(row.isAbsent === true) && !(row.isExempted === true);
+
+      if (!allowDecimals) {
+        if (hasFlatMarks && !Number.isInteger(Number(row.marksObtained))) {
+          errors.push({ studentId: row.studentId, reason: 'Decimal marks are not permitted by School Examination Policy.' });
+          return;
+        }
+        if (row.theoryMarksObtained !== undefined && row.theoryMarksObtained !== null && !Number.isInteger(Number(row.theoryMarksObtained))) {
+          errors.push({ studentId: row.studentId, reason: 'Decimal marks are not permitted for Theory.' });
+          return;
+        }
+        if (row.practicalMarksObtained !== undefined && row.practicalMarksObtained !== null && !Number.isInteger(Number(row.practicalMarksObtained))) {
+          errors.push({ studentId: row.studentId, reason: 'Decimal marks are not permitted for Practical.' });
+          return;
+        }
+      }
 
       if (!isSplit && hasTheoryOrPractical) {
         errors.push({ studentId: row.studentId, reason: 'theoryMarksObtained/practicalMarksObtained are not accepted for a subject without a theory/practical split.' });

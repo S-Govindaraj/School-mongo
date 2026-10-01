@@ -136,6 +136,7 @@ router.delete('/campuses/:id', requirePermissions('campus_manage'), schoolContro
 // --- Academic Years ---
 router.get('/academic-years', academicYearController.getAcademicYears);
 router.get('/academic-years/current', requirePermissions('academic_year_view'), academicYearController.getCurrentAcademicYear);
+router.post('/academic-years/bulk-import', requirePermissions('academic_year_import'), academicYearController.bulkImportAcademicYears);
 router.post('/academic-years', requirePermissions('academic_year_create'), validate(academicYearSchema), academicYearController.createAcademicYear);
 router.patch('/academic-years/:id', requirePermissions('academic_year_edit'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
 router.put('/academic-years/:id', requirePermissions('academic_year_edit'), validate(updateAcademicYearSchema), academicYearController.updateAcademicYear);
@@ -145,6 +146,7 @@ router.delete('/academic-years/:id', requirePermissions('academic_year_inactive'
 
 // --- Academic Terms ---
 router.get('/academic-terms', academicTermController.getAcademicTerms);
+router.post('/academic-terms/bulk-import', requirePermissions('academic_term_import'), academicTermController.bulkImportAcademicTerms);
 router.post('/academic-terms', requirePermissions('academic_term_create'), validate(academicTermSchema), academicTermController.createAcademicTerm);
 router.patch('/academic-terms/:id', requirePermissions('academic_term_edit'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
 router.put('/academic-terms/:id', requirePermissions('academic_term_edit'), validate(updateAcademicTermSchema), academicTermController.updateAcademicTerm);
@@ -153,6 +155,7 @@ router.delete('/academic-terms/:id', requirePermissions('academic_term_inactive'
 
 // --- Grades / Classes ---
 router.get('/grades', gradeController.getGrades);
+router.post('/grades/bulk-import', requirePermissions('grade_import'), gradeController.bulkImportGrades);
 router.post('/grades', requirePermissions('grade_create'), validate(gradeSchema), gradeController.createGrade);
 router.patch('/grades/:id', requirePermissions('grade_edit'), validate(updateGradeSchema), gradeController.updateGrade);
 router.put('/grades/:id', requirePermissions('grade_edit'), validate(updateGradeSchema), gradeController.updateGrade);
@@ -161,6 +164,7 @@ router.delete('/grades/:id', requirePermissions('grade_inactive'), gradeControll
 
 // --- Sections ---
 router.get('/sections', sectionController.getSections);
+router.post('/sections/bulk-import', requirePermissions('section_import'), sectionController.bulkImportSections);
 router.post('/sections', requirePermissions('section_create'), validate(sectionSchema), sectionController.createSection);
 router.patch('/sections/:id', requirePermissions('section_edit'), validate(updateSectionSchema), sectionController.updateSection);
 router.put('/sections/:id', requirePermissions('section_edit'), validate(updateSectionSchema), sectionController.updateSection);
@@ -169,6 +173,7 @@ router.delete('/sections/:id', requirePermissions('section_inactive'), sectionCo
 
 // --- Master Subjects ---
 router.get('/subjects', subjectController.getSubjects);
+router.post('/subjects/bulk-import', requirePermissions('subject_import'), subjectController.bulkImportSubjects);
 router.post('/subjects', requirePermissions('subject_create'), validate(subjectSchema), subjectController.createSubject);
 router.patch('/subjects/:id', requirePermissions('subject_edit'), validate(updateSubjectSchema), subjectController.updateSubject);
 router.put('/subjects/:id', requirePermissions('subject_edit'), validate(updateSubjectSchema), subjectController.updateSubject);
@@ -186,6 +191,7 @@ router.delete('/class-subjects/:id', requirePermissions('class_subject_edit'), c
 
 // --- Staff & Teachers ---
 router.get('/staff', staffAccessScope, staffController.getStaff);
+router.post('/staff/bulk-import', requirePermissions('staff_import'), staffController.bulkImportStaff);
 router.get('/staff/:id', requirePermissions('staff_view'), staffAccessScope, staffController.getStaffById);
 router.post('/staff', requirePermissions('staff_create'), validate(staffSchema), staffController.createStaff);
 router.patch('/staff/:id', requirePermissions('staff_edit'), staffAccessScope, validate(updateStaffSchema), staffController.updateStaff);
@@ -264,12 +270,13 @@ router.post('/corrections/:id/reject', requirePermissions('exam_correction_appro
 
 // --- Student 360 ---
 router.get('/students', requirePermissions('student_view'), staffAccessScope, studentController.getStudents);
+router.post('/students/bulk-import', requirePermissions('student_import'), studentController.bulkImportStudents);
 router.get('/students/:id', requirePermissions('student_view'), staffAccessScope, studentController.getStudentById);
 router.post('/students', requirePermissions('student_create'), validate(studentSchema), studentController.createStudent);
 router.patch('/students/:id', requirePermissions('student_update'), staffAccessScope, validate(updateStudentSchema), studentController.updateStudent);
 router.patch('/students/:id/status', requirePermissions('student_status_change'), staffAccessScope, validate(studentStatusSchema), studentController.updateStudentStatus);
-router.post('/students/:id/restore', requirePermissions('student_archive'), staffAccessScope, studentController.restoreStudent);
-router.delete('/students/:id', requirePermissions('student_archive'), staffAccessScope, studentController.deleteStudent);
+router.post('/students/:id/restore', requirePermissions('student_active', 'student_status_change', 'student_archive'), staffAccessScope, studentController.restoreStudent);
+router.delete('/students/:id', requirePermissions('student_inactive', 'student_status_change', 'student_archive'), staffAccessScope, studentController.deleteStudent);
 
 // --- Student 360 profile tabs ---
 router.get('/students/:studentId/360/overview', requirePermissions('student_view'), student360Controller.getOverview);
@@ -293,6 +300,7 @@ router.get('/students/:studentId/360/medical', requirePermissions('student_view'
 
 // --- Guardians ---
 router.get('/guardians', requirePermissions('guardian_view'), staffAccessScope, guardianController.getGuardians);
+router.post('/guardians/bulk-import', requirePermissions('guardian_create'), guardianController.bulkImportGuardians);
 router.get('/guardians/:id', requirePermissions('guardian_view'), staffAccessScope, guardianController.getGuardianById);
 router.post('/guardians', requirePermissions('guardian_create'), validate(guardianSchema), guardianController.createGuardian);
 router.patch('/guardians/:id', requirePermissions('guardian_edit'), staffAccessScope, validate(updateGuardianSchema), guardianController.updateGuardian);
@@ -311,6 +319,7 @@ router.post('/admissions/:id/admit', requirePermissions('admission_approve'), ad
 // --- Enrollments ---
 router.get('/enrollments', requirePermissions('enrollment_view'), enrollmentController.getEnrollments);
 router.post('/enrollments', requirePermissions('enrollment_create'), validate(enrollmentSchema), enrollmentController.createEnrollment);
+router.post('/enrollments/bulk-promote', requirePermissions('enrollment_promote'), enrollmentController.bulkPromoteStudents);
 router.post('/enrollments/:id/promote', requirePermissions('enrollment_promote'), enrollmentController.promoteStudents);
 
 // --- Documents ---
@@ -329,6 +338,8 @@ router.delete('/documents/:id', requirePermissions('student_archive'), documentC
 // --- Settings ---
 router.get('/settings', requirePermissions('settings_view'), settingController.getSettings);
 router.patch('/settings', requirePermissions('settings_manage'), validate(updateSettingsSchema), settingController.updateSettings);
+router.put('/settings', requirePermissions('settings_manage'), validate(updateSettingsSchema), settingController.updateSettings);
+router.post('/settings/reset', requirePermissions('settings_manage'), settingController.resetSettings);
 
 // --- Audit Logs & Roles ---
 router.get('/audit-logs', requirePermissions('audit_view'), auditLogController.getAuditLogs);

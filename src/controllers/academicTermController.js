@@ -456,10 +456,171 @@ const restoreAcademicTerm = async (req, res, next) => {
   }
 };
 
+const bulkImportAcademicTerms = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const termRecords = req.body.academicTerms;
+
+    if (!Array.isArray(termRecords) || termRecords.length === 0) {
+      throw new ValidationError('A non-empty "academicTerms" array is required.');
+    }
+
+    const academicYears = await AcademicYear.find({ schoolId }).lean();
+    const yearMap = new Map();
+    academicYears.forEach((y) => {
+      yearMap.set(y._id.toString(), y);
+      yearMap.set(y.code.toLowerCase().trim(), y);
+      yearMap.set(y.name.toLowerCase().trim(), y);
+    });
+
+    const results = {
+      total: termRecords.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedAcademicTerms: [],
+    };
+
+    const seenYearAndCodeInBatch = new Set();
+
+    for (let i = 0; i < termRecords.length; i++) {
+      const row = termRecords[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const rawYear = String(row.academicYear || row.academicYearId || '').trim();
+      const matchedYear = rawYear ? yearMap.get(rawYear.toLowerCase()) : null;
+      if (!matchedYear) {
+        rowErrors.push(`Academic Year "${rawYear}" not found in this school`);
+      }
+
+      const rawName = String(row.name || '').trim();
+      if (!rawName) {
+        rowErrors.push('Term Name is required');
+      }
+
+      const rawCode = String(row.code || '').trim().toUpperCase();
+      if (!rawCode) {
+        rowErrors.push('Term Code is required');
+      }
+
+      if (matchedYear && rawCode) {
+        const batchKey = `${matchedYear._id.toString()}:${rawCode}`;
+        if (seenYearAndCodeInBatch.has(batchKey)) {
+          rowErrors.push(`Duplicate Term Code "${rawCode}" for Academic Year in same import sheet`);
+        } else {
+          seenYearAndCodeInBatch.add(batchKey);
+        }
+      }
+
+      const sequence = Number(row.sequence || row.displayOrder) >= 1 ? Number(row.sequence || row.displayOrder) : rowNum;
+
+      const startDateVal = row.startDate ? new Date(row.startDate) : null;
+      const endDateVal = row.endDate ? new Date(row.endDate) : null;
+
+      if (!startDateVal || isNaN(startDateVal.getTime())) {
+        rowErrors.push('Valid start date is required (YYYY-MM-DD)');
+      }
+      if (!endDateVal || isNaN(endDateVal.getTime())) {
+        rowErrors.push('Valid end date is required (YYYY-MM-DD)');
+      }
+      if (startDateVal && endDateVal && !isNaN(startDateVal.getTime()) && !isNaN(endDateVal.getTime())) {
+        if (endDateVal <= startDateVal) {
+          rowErrors.push('End date must be after start date');
+        }
+      }
+
+      const isCurrent =
+        row.isCurrent === true ||
+        String(row.isCurrent || '').toUpperCase() === 'YES' ||
+        String(row.isCurrent || '').toUpperCase() === 'TRUE';
+
+      const status = ['ACTIVE', 'INACTIVE'].includes(String(row.status || '').toUpperCase())
+        ? String(row.status).toUpperCase()
+        : 'ACTIVE';
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: rawName || rawCode || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      let term = await AcademicTerm.findOne({
+        schoolId,
+        academicYearId: matchedYear._id,
+        code: rawCode,
+      });
+
+      if (term) {
+        term.name = rawName;
+        term.sequence = sequence;
+        term.startDate = startDateVal;
+        term.endDate = endDateVal;
+        term.isCurrent = isCurrent;
+        term.status = status;
+        await term.save();
+      } else {
+        term = await AcademicTerm.create({
+          schoolId,
+          academicYearId: matchedYear._id,
+          name: rawName,
+          code: rawCode,
+          sequence,
+          startDate: startDateVal,
+          endDate: endDateVal,
+          isCurrent,
+          status,
+        });
+      }
+
+      results.importedCount++;
+      results.importedAcademicTerms.push({
+        id: term._id,
+        academicYearId: term.academicYearId,
+        academicYear: matchedYear.name,
+        name: term.name,
+        code: term.code,
+        sequence: term.sequence,
+        startDate: term.startDate,
+        endDate: term.endDate,
+        status: term.status,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'AcademicTerm',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} academic terms`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAcademicTerms,
   createAcademicTerm,
   updateAcademicTerm,
   deleteAcademicTerm,
   restoreAcademicTerm,
+  bulkImportAcademicTerms,
 };
+

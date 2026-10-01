@@ -439,16 +439,26 @@ const leaveRequestSchema = baseLeaveRequestObject.superRefine((data, ctx) => {
 
 const updateLeaveRequestSchema = baseLeaveRequestObject.partial();
 
-const updateSettingsSchema = z.object({
-  settings: z.array(
-    z.object({
-      category: z.string().min(1, 'Category is required'),
-      key: z.string().min(1, 'Key is required'),
-      value: z.any(),
-      description: z.string().optional(),
-    })
-  ),
-});
+const updateSettingsSchema = z.union([
+  z.object({
+    settings: z.array(
+      z.object({
+        category: z.string().min(1, 'Category is required'),
+        key: z.string().min(1, 'Key is required'),
+        value: z.any(),
+        description: z.string().optional(),
+      })
+    ),
+  }),
+  z.object({
+    academic: z.record(z.any()).optional(),
+    attendance: z.record(z.any()).optional(),
+    student: z.record(z.any()).optional(),
+    examination: z.record(z.any()).optional(),
+    fees: z.record(z.any()).optional(),
+    security: z.record(z.any()).optional(),
+  }).passthrough(),
+]);
 
 const roleSchema = z.object({
   name: z.string().min(1, 'Role name is required'),

@@ -66,8 +66,10 @@ const permissionsData = [
   { id: 'student_update', module: 'Student Management', action: 'update', code: 'student_update', name: 'Update Students', description: 'Update student profiles and status' },
   { id: 'student_archive', module: 'Student Management', action: 'archive', code: 'student_archive', name: 'Archive Students', description: 'Archive student records' },
   { id: 'student_status_change', module: 'Student Management', action: 'status_change', code: 'student_status_change', name: 'Change Student Status', description: 'Change a student\'s lifecycle status (active/inactive/withdrawn/etc.)' },
+  { id: 'student_import', module: 'Student Management', action: 'import', code: 'student_import', name: 'Bulk Import Students', description: 'Bulk import students from Excel spreadsheets with validation and preview' },
   { id: 'guardian_view', module: 'Student Management', action: 'view', code: 'guardian_view', name: 'View Parents & Guardians', description: 'View parent and guardian directory' },
   { id: 'guardian_create', module: 'Student Management', action: 'create', code: 'guardian_create', name: 'Create Guardian', description: 'Create parent and guardian profiles' },
+  { id: 'guardian_import', module: 'Student Management', action: 'import', code: 'guardian_import', name: 'Bulk Import Parents & Guardians', description: 'Bulk import parent and guardian profiles with student links from Excel' },
   { id: 'guardian_edit', module: 'Student Management', action: 'edit', code: 'guardian_edit', name: 'Edit Guardian', description: 'Modify parent and guardian profiles and contact info' },
   { id: 'guardian_active', module: 'Student Management', action: 'active', code: 'guardian_active', name: 'Activate Guardian', description: 'Activate parent and guardian profiles' },
   { id: 'guardian_inactive', module: 'Student Management', action: 'inactive', code: 'guardian_inactive', name: 'Deactivate Guardian', description: 'Deactivate parent and guardian profiles' },
@@ -100,6 +102,7 @@ const permissionsData = [
   // People & Staff Management
   { id: 'staff_view', module: 'People & Staff', action: 'view', code: 'staff_view', name: 'View Teachers & Staff', description: 'View staff directory and member profiles' },
   { id: 'staff_create', module: 'People & Staff', action: 'create', code: 'staff_create', name: 'Create Staff Member', description: 'Register and create new staff members and teachers' },
+  { id: 'staff_import', module: 'People & Staff', action: 'import', code: 'staff_import', name: 'Bulk Import Staff & Teachers', description: 'Bulk import teaching faculty and staff members from Excel spreadsheets' },
   { id: 'staff_edit', module: 'People & Staff', action: 'edit', code: 'staff_edit', name: 'Edit Staff Member', description: 'Modify staff member profiles and job details' },
   { id: 'staff_active', module: 'People & Staff', action: 'active', code: 'staff_active', name: 'Activate Staff Member', description: 'Activate staff member profile' },
   { id: 'staff_inactive', module: 'People & Staff', action: 'inactive', code: 'staff_inactive', name: 'Deactivate Staff Member', description: 'Deactivate staff member profile' },
@@ -126,6 +129,7 @@ const permissionsData = [
   { id: 'academic_config_view', module: 'Academic Setup', action: 'view', code: 'academic_config_view', name: 'View Academic Configuration', description: 'Access the full Academic Configuration workspace' },
   { id: 'academic_year_view', module: 'Academic Setup', action: 'view', code: 'academic_year_view', name: 'View Academic Years', description: 'View academic calendar years' },
   { id: 'academic_year_create', module: 'Academic Setup', action: 'create', code: 'academic_year_create', name: 'Create Academic Year', description: 'Add new academic calendar years' },
+  { id: 'academic_year_import', module: 'Academic Setup', action: 'import', code: 'academic_year_import', name: 'Bulk Import Academic Years', description: 'Bulk import academic calendar years from Excel spreadsheets' },
   { id: 'academic_year_edit', module: 'Academic Setup', action: 'edit', code: 'academic_year_edit', name: 'Edit Academic Year', description: 'Modify academic calendar years' },
   { id: 'academic_year_inactive', module: 'Academic Setup', action: 'inactive', code: 'academic_year_inactive', name: 'Deactivate Academic Year', description: 'Deactivate academic calendar years' },
   { id: 'academic_year_active', module: 'Academic Setup', action: 'active', code: 'academic_year_active', name: 'Activate Academic Year', description: 'Activate or set as current academic calendar year' },
@@ -133,6 +137,7 @@ const permissionsData = [
   
   { id: 'academic_term_view', module: 'Academic Setup', action: 'view', code: 'academic_term_view', name: 'View Academic Terms', description: 'View academic terms and semesters' },
   { id: 'academic_term_create', module: 'Academic Setup', action: 'create', code: 'academic_term_create', name: 'Create Academic Term', description: 'Add new academic terms' },
+  { id: 'academic_term_import', module: 'Academic Setup', action: 'import', code: 'academic_term_import', name: 'Bulk Import Academic Terms', description: 'Bulk import academic terms and semester divisions from Excel spreadsheets' },
   { id: 'academic_term_edit', module: 'Academic Setup', action: 'edit', code: 'academic_term_edit', name: 'Edit Academic Term', description: 'Modify academic terms' },
   { id: 'academic_term_inactive', module: 'Academic Setup', action: 'inactive', code: 'academic_term_inactive', name: 'Deactivate Academic Term', description: 'Deactivate academic terms' },
   { id: 'academic_term_active', module: 'Academic Setup', action: 'active', code: 'academic_term_active', name: 'Activate Academic Term', description: 'Activate academic terms' },
@@ -140,6 +145,7 @@ const permissionsData = [
   
   { id: 'grade_view', module: 'Academic Setup', action: 'view', code: 'grade_view', name: 'View Grades / Classes', description: 'View grade and class directory' },
   { id: 'grade_create', module: 'Academic Setup', action: 'create', code: 'grade_create', name: 'Create Grade / Class', description: 'Add new grade and class levels' },
+  { id: 'grade_import', module: 'Academic Setup', action: 'import', code: 'grade_import', name: 'Bulk Import Grades / Classes', description: 'Bulk import grades, classes, and educational wings from Excel spreadsheets' },
   { id: 'grade_edit', module: 'Academic Setup', action: 'edit', code: 'grade_edit', name: 'Edit Grade / Class', description: 'Modify grade and class levels' },
   { id: 'grade_inactive', module: 'Academic Setup', action: 'inactive', code: 'grade_inactive', name: 'Deactivate Grade / Class', description: 'Deactivate grade and class levels' },
   { id: 'grade_active', module: 'Academic Setup', action: 'active', code: 'grade_active', name: 'Activate Grade / Class', description: 'Activate grade and class levels' },
@@ -147,6 +153,7 @@ const permissionsData = [
   
   { id: 'section_view', module: 'Academic Setup', action: 'view', code: 'section_view', name: 'View Sections', description: 'View class sections' },
   { id: 'section_create', module: 'Academic Setup', action: 'create', code: 'section_create', name: 'Create Section', description: 'Add new class sections' },
+  { id: 'section_import', module: 'Academic Setup', action: 'import', code: 'section_import', name: 'Bulk Import Sections', description: 'Bulk import class sections, room allocations, and teacher assignments from Excel spreadsheets' },
   { id: 'section_edit', module: 'Academic Setup', action: 'edit', code: 'section_edit', name: 'Edit Section', description: 'Modify class sections' },
   { id: 'section_inactive', module: 'Academic Setup', action: 'inactive', code: 'section_inactive', name: 'Deactivate Section', description: 'Deactivate class sections' },
   { id: 'section_active', module: 'Academic Setup', action: 'active', code: 'section_active', name: 'Activate Section', description: 'Activate class sections' },
@@ -154,6 +161,7 @@ const permissionsData = [
   
   { id: 'subject_view', module: 'Academic Setup', action: 'view', code: 'subject_view', name: 'View Master Subjects', description: 'View subject catalogue' },
   { id: 'subject_create', module: 'Academic Setup', action: 'create', code: 'subject_create', name: 'Create Master Subject', description: 'Add new master subjects' },
+  { id: 'subject_import', module: 'Academic Setup', action: 'import', code: 'subject_import', name: 'Bulk Import Master Subjects', description: 'Bulk import curriculum subjects and classification types from Excel spreadsheets' },
   { id: 'subject_edit', module: 'Academic Setup', action: 'edit', code: 'subject_edit', name: 'Edit Master Subject', description: 'Modify master subjects' },
   { id: 'subject_inactive', module: 'Academic Setup', action: 'inactive', code: 'subject_inactive', name: 'Deactivate Master Subject', description: 'Deactivate master subjects' },
   { id: 'subject_active', module: 'Academic Setup', action: 'active', code: 'subject_active', name: 'Activate Master Subject', description: 'Activate master subjects' },

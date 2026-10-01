@@ -517,6 +517,198 @@ const restoreStaff = async (req, res, next) => {
   }
 };
 
+const bulkImportStaff = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const staffRecords = req.body.staff;
+
+    if (!Array.isArray(staffRecords) || staffRecords.length === 0) {
+      throw new ValidationError('A non-empty "staff" array is required.');
+    }
+
+    // Pre-fetch roles, departments, designations
+    const [teacherRole, staffRole, departments, designations] = await Promise.all([
+      Role.findOne({ code: 'TEACHER' }).lean(),
+      Role.findOne({ code: 'STAFF' }).lean(),
+      Department.find({ schoolId }).lean(),
+      Designation.find({ schoolId }).lean(),
+    ]);
+
+    const deptMap = new Map();
+    departments.forEach((d) => {
+      deptMap.set(d.name.toLowerCase().trim(), d);
+      if (d.code) deptMap.set(d.code.toLowerCase().trim(), d);
+    });
+
+    const desigMap = new Map();
+    designations.forEach((d) => {
+      desigMap.set(d.name.toLowerCase().trim(), d);
+      if (d.code) desigMap.set(d.code.toLowerCase().trim(), d);
+    });
+
+    const results = {
+      total: staffRecords.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedStaff: [],
+    };
+
+    const seenEmployeeIdsInBatch = new Set();
+    const defaultPasswordHash = await bcrypt.hash('password123', 10);
+
+    for (let i = 0; i < staffRecords.length; i++) {
+      const row = staffRecords[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const rawEmpId = String(row.employeeId || '').trim().toUpperCase();
+      if (!rawEmpId) {
+        rowErrors.push('Employee ID is required');
+      } else if (seenEmployeeIdsInBatch.has(rawEmpId)) {
+        rowErrors.push(`Duplicate Employee ID "${rawEmpId}" within same import sheet`);
+      } else {
+        seenEmployeeIdsInBatch.add(rawEmpId);
+      }
+
+      const rawFirstName = String(row.firstName || '').trim();
+      const rawLastName = String(row.lastName || '').trim();
+      const rawFullName = String(row.name || `${rawFirstName} ${rawLastName}`).trim();
+      if (!rawFullName) {
+        rowErrors.push('Staff Name is required');
+      }
+
+      const phone = String(row.phone || '').trim();
+      const email = String(
+        row.email || (rawEmpId ? `${rawEmpId.toLowerCase()}@school.internal` : '')
+      ).toLowerCase().trim();
+
+      const isTeaching =
+        row.isTeachingStaff === true ||
+        String(row.isTeachingStaff || '').toUpperCase() === 'YES' ||
+        String(row.isTeachingStaff || '').toUpperCase() === 'TRUE';
+
+      const designationStr = String(row.designation || (isTeaching ? 'Teacher' : 'Staff')).trim();
+      const departmentStr = String(row.department || '').trim();
+
+      const matchedDept = departmentStr ? deptMap.get(departmentStr.toLowerCase()) : null;
+      const matchedDesig = designationStr ? desigMap.get(designationStr.toLowerCase()) : null;
+
+      const qualificationStr = String(row.qualification || '').trim();
+      const experienceYears = Number(row.experienceYears) >= 0 ? Number(row.experienceYears) : 0;
+      const status = ['ACTIVE', 'INACTIVE'].includes(String(row.status || '').toUpperCase())
+        ? String(row.status).toUpperCase()
+        : 'ACTIVE';
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: rawFullName || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      // Check existing staff
+      let staff = await Staff.findOne({ schoolId, employeeId: rawEmpId });
+      let user = null;
+
+      if (email) {
+        user = await User.findOne({ email });
+      }
+
+      const targetRole = isTeaching ? teacherRole : staffRole;
+      const roleId = targetRole?._id || null;
+
+      if (!user) {
+        user = await User.create({
+          schoolId,
+          roleId,
+          email: email || `${rawEmpId.toLowerCase()}@school.internal`,
+          password: defaultPasswordHash,
+          name: rawFullName,
+          phone: phone || '',
+          status: 'ACTIVE',
+        });
+      } else {
+        if (roleId && !user.roleId) user.roleId = roleId;
+        if (rawFullName) user.name = rawFullName;
+        if (phone && !user.phone) user.phone = phone;
+        await user.save();
+      }
+
+      if (staff) {
+        staff.userId = user._id;
+        staff.firstName = rawFirstName || rawFullName.split(' ')[0] || '';
+        staff.lastName = rawLastName || rawFullName.split(' ').slice(1).join(' ') || '';
+        staff.email = email;
+        staff.phone = phone;
+        staff.designation = designationStr;
+        staff.designationId = matchedDesig?._id || staff.designationId || null;
+        staff.department = departmentStr;
+        staff.departmentId = matchedDept?._id || staff.departmentId || null;
+        staff.qualification = qualificationStr || staff.qualification;
+        staff.experienceYears = experienceYears;
+        staff.isTeachingStaff = isTeaching;
+        staff.status = status;
+        await staff.save();
+      } else {
+        staff = await Staff.create({
+          schoolId,
+          userId: user._id,
+          employeeId: rawEmpId,
+          firstName: rawFirstName || rawFullName.split(' ')[0] || '',
+          lastName: rawLastName || rawFullName.split(' ').slice(1).join(' ') || '',
+          email,
+          phone,
+          designation: designationStr,
+          designationId: matchedDesig?._id || null,
+          department: departmentStr,
+          departmentId: matchedDept?._id || null,
+          qualification: qualificationStr,
+          experienceYears,
+          isTeachingStaff: isTeaching,
+          status,
+        });
+      }
+
+      results.importedCount++;
+      results.importedStaff.push({
+        id: staff._id,
+        employeeId: staff.employeeId,
+        name: rawFullName,
+        designation: staff.designation,
+        department: staff.department,
+        isTeachingStaff: staff.isTeachingStaff,
+        status: staff.status,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'Staff',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} staff members`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getStaff,
   getStaffById,
@@ -524,4 +716,6 @@ module.exports = {
   updateStaff,
   deleteStaff,
   restoreStaff,
+  bulkImportStaff,
 };
+

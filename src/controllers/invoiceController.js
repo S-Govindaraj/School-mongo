@@ -8,6 +8,7 @@ const StudentLedger = require('../models/StudentLedger');
 const PaymentAllocation = require('../models/PaymentAllocation');
 const Payment = require('../models/Payment');
 const { generateSequenceNumber } = require('../utils/sequenceUtils');
+const SchoolSetting = require('../models/SchoolSetting');
 const { successResponse, errorResponse } = require('../utils/response');
 
 const getInvoices = async (req, res, next) => {
@@ -144,8 +145,12 @@ const generateBulkInvoices = async (req, res, next) => {
       studentIds // Optional array of specific student IDs
     } = req.body;
 
-    if (!academicYearId || !billingPeriod || !dueDate) {
-      return errorResponse(res, 'Academic Year, Billing Period, and Due Date are required', 400, 'VALIDATION_ERROR');
+    const schoolSetting = await SchoolSetting.findOne({ schoolId }).lean();
+    const defaultDueDays = schoolSetting?.fees?.paymentDueDays || 15;
+    const resolvedDueDate = dueDate ? new Date(dueDate) : new Date(Date.now() + defaultDueDays * 24 * 60 * 60 * 1000);
+
+    if (!academicYearId || !billingPeriod) {
+      return errorResponse(res, 'Academic Year and Billing Period are required', 400, 'VALIDATION_ERROR');
     }
 
     // Find assignments matching query
@@ -271,7 +276,7 @@ const generateBulkInvoices = async (req, res, next) => {
         enrollmentId: assignment.enrollmentId,
         invoiceNumber,
         invoiceDate: new Date(),
-        dueDate: new Date(dueDate),
+        dueDate: resolvedDueDate,
         billingPeriod,
         subtotal,
         discountAmount: totalDiscount,

@@ -246,10 +246,127 @@ const restoreSubject = async (req, res, next) => {
   }
 };
 
+const bulkImportSubjects = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const subjectRecords = req.body.subjects;
+
+    if (!Array.isArray(subjectRecords) || subjectRecords.length === 0) {
+      throw new ValidationError('A non-empty "subjects" array is required.');
+    }
+
+    const validTypes = ['CORE', 'ELECTIVE', 'LANGUAGE', 'PRACTICAL', 'OTHER', 'LAB', 'ACTIVITY'];
+
+    const results = {
+      total: subjectRecords.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedSubjects: [],
+    };
+
+    const seenCodesInBatch = new Set();
+
+    for (let i = 0; i < subjectRecords.length; i++) {
+      const row = subjectRecords[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const rawName = String(row.name || '').trim();
+      if (!rawName) {
+        rowErrors.push('Subject Name is required');
+      }
+
+      const rawCode = String(row.code || rawName || '').trim().toUpperCase();
+      if (!rawCode) {
+        rowErrors.push('Subject Code is required');
+      } else if (seenCodesInBatch.has(rawCode)) {
+        rowErrors.push(`Duplicate Subject Code "${rawCode}" in same import sheet`);
+      } else {
+        seenCodesInBatch.add(rawCode);
+      }
+
+      const shortName = String(row.shortName || '').trim();
+      const rawType = String(row.type || 'CORE').trim().toUpperCase();
+      const type = validTypes.includes(rawType) ? rawType : 'CORE';
+      const description = String(row.description || '').trim();
+
+      const status = ['ACTIVE', 'INACTIVE'].includes(String(row.status || '').toUpperCase())
+        ? String(row.status).toUpperCase()
+        : 'ACTIVE';
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: rawName || rawCode || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      let subject = await Subject.findOne({ schoolId, code: rawCode });
+
+      if (subject) {
+        subject.name = rawName;
+        subject.shortName = shortName;
+        subject.type = type;
+        subject.description = description;
+        subject.status = status;
+        await subject.save();
+      } else {
+        subject = await Subject.create({
+          schoolId,
+          name: rawName,
+          code: rawCode,
+          shortName,
+          type,
+          description,
+          status,
+        });
+      }
+
+      results.importedCount++;
+      results.importedSubjects.push({
+        id: subject._id,
+        name: subject.name,
+        code: subject.code,
+        shortName: subject.shortName,
+        type: subject.type,
+        status: subject.status,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'Subject',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} subjects`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSubjects,
   createSubject,
   updateSubject,
   deleteSubject,
   restoreSubject,
+  bulkImportSubjects,
 };
+

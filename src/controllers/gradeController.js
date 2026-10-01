@@ -353,10 +353,120 @@ const restoreGrade = async (req, res, next) => {
   }
 };
 
+const bulkImportGrades = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const gradeRecords = req.body.grades;
+
+    if (!Array.isArray(gradeRecords) || gradeRecords.length === 0) {
+      throw new ValidationError('A non-empty "grades" array is required.');
+    }
+
+    const results = {
+      total: gradeRecords.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedGrades: [],
+    };
+
+    const seenCodesInBatch = new Set();
+
+    for (let i = 0; i < gradeRecords.length; i++) {
+      const row = gradeRecords[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const rawName = String(row.name || '').trim();
+      if (!rawName) {
+        rowErrors.push('Grade Name is required');
+      }
+
+      const rawCode = String(row.code || rawName || '').trim().toUpperCase();
+      if (!rawCode) {
+        rowErrors.push('Grade Code is required');
+      } else if (seenCodesInBatch.has(rawCode)) {
+        rowErrors.push(`Duplicate Grade Code "${rawCode}" in same import sheet`);
+      } else {
+        seenCodesInBatch.add(rawCode);
+      }
+
+      const category = String(row.category || 'Primary').trim();
+      const sequenceOrder = Number(row.sequenceOrder) >= 0 ? Number(row.sequenceOrder) : rowNum;
+      const status = ['ACTIVE', 'INACTIVE'].includes(String(row.status || '').toUpperCase())
+        ? String(row.status).toUpperCase()
+        : 'ACTIVE';
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: rawName || rawCode || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      let grade = await Grade.findOne({ schoolId, code: rawCode });
+
+      if (grade) {
+        grade.name = rawName;
+        grade.category = category;
+        grade.sequenceOrder = sequenceOrder;
+        grade.status = status;
+        await grade.save();
+      } else {
+        grade = await Grade.create({
+          schoolId,
+          name: rawName,
+          code: rawCode,
+          category,
+          sequenceOrder,
+          status,
+        });
+      }
+
+      results.importedCount++;
+      results.importedGrades.push({
+        id: grade._id,
+        name: grade.name,
+        code: grade.code,
+        category: grade.category,
+        sequenceOrder: grade.sequenceOrder,
+        status: grade.status,
+      });
+    }
+
+    logAuditEvent({
+      schoolId,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      actorEmail: req.user?.email,
+      action: 'BULK_IMPORT',
+      entity: 'Grade',
+      entityId: schoolId.toString(),
+      newValues: {
+        total: results.total,
+        importedCount: results.importedCount,
+        skippedCount: results.skippedCount,
+      },
+      requestId: req.requestId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return successResponse(res, results, `Successfully imported ${results.importedCount} grades`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getGrades,
   createGrade,
   updateGrade,
   deleteGrade,
   restoreGrade,
+  bulkImportGrades,
 };
+

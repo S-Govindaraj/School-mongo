@@ -409,7 +409,10 @@ const deleteRole = async (req, res, next) => {
 //    — they'd otherwise show up as confusing duplicate-looking checkboxes.
 //    Hidden here; still fully functional via the alias maps in
 //    middleware/auth.js if a role already holds one of these codes.
-const isLegacyAliasPermission = (p) => /\(Legacy\)/i.test(p.name || '') || /^Alias for/i.test(p.description || '');
+const isLegacyAliasPermission = (p) =>
+  /\(Legacy\)/i.test(p.name || '') ||
+  /^Alias for/i.test(p.description || '') ||
+  p.code === 'academic_year_manage';
 
 // 2. A few permission codes live under a DB `module` value that doesn't
 // match where they actually belong in the UI (e.g. `guardian_*` codes are
@@ -418,6 +421,7 @@ const isLegacyAliasPermission = (p) => /\(Legacy\)/i.test(p.name || '') || /^Ali
 const MODULE_OVERRIDE_BY_CODE = {
   guardian_view: 'Guardians',
   guardian_create: 'Guardians',
+  guardian_import: 'Guardians',
   guardian_edit: 'Guardians',
   guardian_active: 'Guardians',
   guardian_inactive: 'Guardians',
@@ -458,7 +462,7 @@ const MODULE_ORDER = [
 // sequence, then anything else alphabetically) instead of alphabetical by
 // name — matches the `<module>_view/_create/_edit/_active/_inactive`
 // convention the rest of the app's permission codes already follow.
-const ACTION_ORDER = ['view', 'create', 'edit', 'update', 'active', 'inactive', 'delete', 'archive', 'approve', 'manage'];
+const ACTION_ORDER = ['view', 'create', 'import', 'edit', 'update', 'active', 'inactive', 'delete', 'archive', 'approve', 'manage'];
 
 const getPermissions = async (req, res, next) => {
   try {
