@@ -233,10 +233,242 @@ const admitStudent = async (req, res, next) => {
   }
 };
 
+const bulkImportAdmissions = async (req, res, next) => {
+  try {
+    const schoolId = req.schoolContext?.schoolId;
+    const { admissions = [], defaultGradeId, defaultAcademicYearId } = req.body;
+
+    if (!Array.isArray(admissions) || admissions.length === 0) {
+      throw new ValidationError('A non-empty "admissions" array is required.');
+    }
+
+    const [allGrades, allAcademicYears, existingApps] = await Promise.all([
+      Grade.find({ schoolId }).lean(),
+      AcademicYear.find({ schoolId }).lean(),
+      Admission.find({ schoolId }, { applicationNumber: 1 }).lean(),
+    ]);
+
+    const activeAcademicYear = allAcademicYears.find((y) => y.isCurrent) || allAcademicYears[0];
+
+    const gradeById = new Map();
+    const gradeByNameOrCode = new Map();
+    for (const g of allGrades) {
+      gradeById.set(String(g._id), g);
+      if (g.name) gradeByNameOrCode.set(g.name.toLowerCase().trim(), g);
+      if (g.code) gradeByNameOrCode.set(g.code.toLowerCase().trim(), g);
+    }
+
+    const yearById = new Map();
+    const yearByNameOrCode = new Map();
+    for (const y of allAcademicYears) {
+      yearById.set(String(y._id), y);
+      if (y.name) yearByNameOrCode.set(y.name.toLowerCase().trim(), y);
+      if (y.code) yearByNameOrCode.set(y.code.toLowerCase().trim(), y);
+    }
+
+    const existingAppNumbers = new Set(
+      existingApps.map((a) => String(a.applicationNumber || '').trim().toLowerCase())
+    );
+
+    const sanitizeText = (val) => String(val || '').trim();
+    const sanitizePhone = (val) => String(val || '').replace(/[^0-9]/g, '').trim();
+
+    const results = {
+      total: admissions.length,
+      importedCount: 0,
+      skippedCount: 0,
+      errors: [],
+      importedAdmissions: [],
+    };
+
+    for (let i = 0; i < admissions.length; i++) {
+      const raw = admissions[i];
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      const firstName = sanitizeText(raw.firstName);
+      const middleName = sanitizeText(raw.middleName);
+      const lastName = sanitizeText(raw.lastName);
+      const rawDob = sanitizeText(raw.dob || raw.dateOfBirth);
+      let gender = sanitizeText(raw.gender).toUpperCase();
+      let bloodGroup = sanitizeText(raw.bloodGroup).toUpperCase();
+      const nationality = sanitizeText(raw.nationality) || 'Indian';
+      const email = sanitizeText(raw.email).toLowerCase();
+      const phone = sanitizePhone(raw.phone);
+      const previousSchool = sanitizeText(raw.previousSchool);
+      const customAppNumber = sanitizeText(raw.applicationNumber);
+      const notes = sanitizeText(raw.notes);
+
+      const street = sanitizeText(raw.street || raw.address?.street);
+      const city = sanitizeText(raw.city || raw.address?.city);
+      const state = sanitizeText(raw.state || raw.address?.state);
+      const postalCode = sanitizePhone(raw.postalCode || raw.address?.postalCode);
+      const country = sanitizeText(raw.country || raw.address?.country) || 'India';
+
+      const guardianName = sanitizeText(raw.guardianName);
+      let guardianRelationship = sanitizeText(raw.guardianRelationship).toUpperCase() || 'FATHER';
+      const guardianPhone = sanitizePhone(raw.guardianPhone);
+      const guardianEmail = sanitizeText(raw.guardianEmail).toLowerCase();
+
+      let status = sanitizeText(raw.status).toUpperCase();
+      if (!['APPLICATION', 'UNDER_REVIEW', 'APPROVED', 'ADMITTED', 'REJECTED'].includes(status)) {
+        status = 'APPLICATION';
+      }
+
+      // Validations
+      if (!firstName) rowErrors.push('Student First Name is required');
+      if (!lastName) rowErrors.push('Student Last Name is required');
+
+      // Gender normalization
+      if (!['MALE', 'FEMALE', 'OTHER'].includes(gender)) {
+        if (gender === 'M' || gender === 'BOY') gender = 'MALE';
+        else if (gender === 'F' || gender === 'GIRL') gender = 'FEMALE';
+        else gender = 'MALE';
+      }
+
+      // Blood group normalization
+      if (!['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'UNKNOWN'].includes(bloodGroup)) {
+        bloodGroup = 'UNKNOWN';
+      }
+
+      // Guardian Relationship normalization
+      if (!['FATHER', 'MOTHER', 'GUARDIAN', 'OTHER'].includes(guardianRelationship)) {
+        guardianRelationship = 'FATHER';
+      }
+
+      // Guardian validations
+      if (!guardianName) rowErrors.push('Guardian Name is required');
+      if (!guardianPhone) {
+        rowErrors.push('Guardian Phone is required');
+      } else if (guardianPhone.length < 10) {
+        rowErrors.push('Guardian Phone must be at least 10 digits');
+      }
+
+      // DOB
+      let dobDate = null;
+      if (!rawDob) {
+        rowErrors.push('Date of Birth is required');
+      } else {
+        dobDate = new Date(rawDob);
+        if (isNaN(dobDate.getTime())) {
+          rowErrors.push('Invalid Date of Birth format');
+        }
+      }
+
+      // Grade resolution
+      let resolvedGradeId = defaultGradeId || null;
+      const rawGrade = sanitizeText(raw.grade || raw.gradeId || raw.gradeName || raw.standard);
+      if (rawGrade) {
+        const foundGrade = gradeById.get(rawGrade) || gradeByNameOrCode.get(rawGrade.toLowerCase());
+        if (foundGrade) {
+          resolvedGradeId = foundGrade._id;
+        } else {
+          rowErrors.push(`Grade "${rawGrade}" not recognized in this school`);
+        }
+      } else if (!resolvedGradeId) {
+        rowErrors.push('Grade / Class is required');
+      }
+
+      // Academic Year resolution
+      let resolvedYearId = defaultAcademicYearId || activeAcademicYear?._id || null;
+      const rawYear = sanitizeText(raw.academicYear || raw.academicYearId || raw.year);
+      if (rawYear) {
+        const foundYear = yearById.get(rawYear) || yearByNameOrCode.get(rawYear.toLowerCase());
+        if (foundYear) {
+          resolvedYearId = foundYear._id;
+        } else {
+          rowErrors.push(`Academic Year "${rawYear}" not recognized`);
+        }
+      } else if (!resolvedYearId) {
+        rowErrors.push('Academic Year is required');
+      }
+
+      // Check duplicate application number
+      if (customAppNumber && existingAppNumbers.has(customAppNumber.toLowerCase())) {
+        rowErrors.push(`Application Number "${customAppNumber}" already exists`);
+      }
+
+      if (rowErrors.length > 0) {
+        results.skippedCount++;
+        results.errors.push({
+          row: rowNum,
+          name: `${firstName} ${lastName}`.trim() || `Row ${rowNum}`,
+          errors: rowErrors,
+        });
+        continue;
+      }
+
+      // Generate Application Number
+      const applicationNumber = customAppNumber || (await generateSequenceNumber(schoolId, 'ADMISSION'));
+      if (customAppNumber) {
+        existingAppNumbers.add(customAppNumber.toLowerCase());
+      }
+
+      const admission = await Admission.create({
+        schoolId,
+        applicationNumber,
+        applicationDate: new Date(),
+        academicYearId: resolvedYearId,
+        gradeId: resolvedGradeId,
+        studentData: {
+          firstName,
+          middleName,
+          lastName,
+          dob: dobDate,
+          gender,
+          bloodGroup,
+          nationality,
+          email,
+          phone,
+          address: {
+            street,
+            city,
+            state,
+            postalCode,
+            country,
+          },
+          previousSchool,
+        },
+        guardianData: [
+          {
+            name: guardianName,
+            relationship: guardianRelationship,
+            phone: guardianPhone,
+            email: guardianEmail,
+            isPrimary: true,
+            isEmergencyContact: true,
+          },
+        ],
+        status,
+        notes,
+      });
+
+      results.importedCount++;
+      results.importedAdmissions.push(admission);
+    }
+
+    await logAuditEvent(req, 'BULK_IMPORT', 'ADMISSION', null, null, {
+      total: results.total,
+      importedCount: results.importedCount,
+      skippedCount: results.skippedCount,
+    });
+
+    return successResponse(
+      res,
+      results,
+      `Successfully imported ${results.importedCount} of ${results.total} admission application(s).`,
+      200
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAdmissions,
   getAdmissionById,
   createAdmission,
   updateAdmissionStatus,
   admitStudent,
+  bulkImportAdmissions,
 };

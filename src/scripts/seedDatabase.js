@@ -94,6 +94,7 @@ const permissionsData = [
   { id: 'exam_correction_approve', module: 'Examinations', action: 'approve', code: 'exam_correction_approve', name: 'Approve Result Correction', description: 'Approve or reject a result correction request, applying it to the published result (sensitive — must be granted explicitly per role)' },
   { id: 'admission_view', module: 'Admissions & Enrollment', action: 'view', code: 'admission_view', name: 'View Admissions', description: 'View admission applications' },
   { id: 'admission_create', module: 'Admissions & Enrollment', action: 'create', code: 'admission_create', name: 'Submit Admissions', description: 'Create admission applications' },
+  { id: 'admission_import', module: 'Admissions & Enrollment', action: 'import', code: 'admission_import', name: 'Bulk Import Admissions', description: 'Bulk import student admission applications from Excel spreadsheets with validation and preview' },
   { id: 'admission_update', module: 'Admissions & Enrollment', action: 'update', code: 'admission_update', name: 'Update Admissions', description: 'Update application status and review notes' },
   { id: 'admission_approve', module: 'Admissions & Enrollment', action: 'approve', code: 'admission_approve', name: 'Approve & Admit', description: 'Approve admissions and convert to student records' },
   { id: 'enrollment_view', module: 'Admissions & Enrollment', action: 'view', code: 'enrollment_view', name: 'View Enrollments', description: 'View student academic year enrollments' },

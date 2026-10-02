@@ -66,6 +66,13 @@ const BULK_IMPORT_PERMISSIONS = [
     name: 'Bulk Import Master Subjects',
     description: 'Bulk import curriculum subjects and classification types from Excel spreadsheets',
   },
+  {
+    module: 'Admissions & Enrollment',
+    action: 'import',
+    code: 'admission_import',
+    name: 'Bulk Import Admissions',
+    description: 'Bulk import student admission applications from Excel spreadsheets with validation and preview',
+  },
 ];
 
 const IMPLIED_BY = {
@@ -76,6 +83,7 @@ const IMPLIED_BY = {
   grade_import: ['grade_manage'],
   section_import: ['section_manage', 'grade_manage'],
   subject_import: ['subject_manage'],
+  admission_import: ['admission_create', 'admission_approve'],
 };
 
 async function run() {

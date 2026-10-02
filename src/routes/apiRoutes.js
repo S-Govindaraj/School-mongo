@@ -313,6 +313,7 @@ router.post('/students/:studentId/guardians', requirePermissions('guardian_creat
 router.get('/admissions', requirePermissions('admission_view'), admissionController.getAdmissions);
 router.get('/admissions/:id', requirePermissions('admission_view'), admissionController.getAdmissionById);
 router.post('/admissions', requirePermissions('admission_create'), validate(admissionSchema), admissionController.createAdmission);
+router.post('/admissions/bulk-import', requirePermissions('admission_import'), admissionController.bulkImportAdmissions);
 router.patch('/admissions/:id/status', requirePermissions('admission_approve'), validate(updateAdmissionStatusSchema), admissionController.updateAdmissionStatus);
 router.post('/admissions/:id/admit', requirePermissions('admission_approve'), admissionController.admitStudent);
 
