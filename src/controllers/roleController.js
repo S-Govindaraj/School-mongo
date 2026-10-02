@@ -97,11 +97,11 @@ const getRoles = async (req, res, next) => {
 
     const filtered = search
       ? formattedRoles.filter(
-          (r) =>
-            r.name.toLowerCase().includes(search) ||
-            r.code.toLowerCase().includes(search) ||
-            r.description.toLowerCase().includes(search)
-        )
+        (r) =>
+          r.name.toLowerCase().includes(search) ||
+          r.code.toLowerCase().includes(search) ||
+          r.description.toLowerCase().includes(search)
+      )
       : formattedRoles;
 
     const totalRecords = filtered.length;
@@ -409,10 +409,26 @@ const deleteRole = async (req, res, next) => {
 //    — they'd otherwise show up as confusing duplicate-looking checkboxes.
 //    Hidden here; still fully functional via the alias maps in
 //    middleware/auth.js if a role already holds one of these codes.
+const RETIRED_COARSE_PERMISSIONS = new Set([
+  'academic_year_manage',
+  'academic_term_manage',
+  'grade_manage',
+  'section_manage',
+  'subject_manage',
+  'class_subject_manage',
+  'teacher_assignment_manage',
+  'period_manage',
+  'room_manage',
+  'timetable_manage',
+  'timetable_create',
+  'timetable_update',
+  'timetable_delete',
+]);
+
 const isLegacyAliasPermission = (p) =>
   /\(Legacy\)/i.test(p.name || '') ||
   /^Alias for/i.test(p.description || '') ||
-  p.code === 'academic_year_manage';
+  RETIRED_COARSE_PERMISSIONS.has(p.code);
 
 // 2. A few permission codes live under a DB `module` value that doesn't
 // match where they actually belong in the UI (e.g. `guardian_*` codes are

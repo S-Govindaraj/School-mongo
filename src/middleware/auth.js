@@ -204,6 +204,8 @@ const PERMISSION_ALIASES = {
   'timetable_create': ['timetable_create', 'timetable_manage'],
   'timetable_update': ['timetable_update', 'timetable_manage'],
   'timetable_delete': ['timetable_delete', 'timetable_manage'],
+  'timetable_swap': ['timetable_swap', 'timetable_manage'],
+  'timetable_regenerate': ['timetable_regenerate', 'timetable_generate', 'timetable_manage'],
   'room_view': ['room_view', 'room_manage', 'timetable_manage', 'period_manage'],
   'room_manage': ['room_manage', 'timetable_manage'],
 
