@@ -469,23 +469,6 @@ const bulkImportStudents = async (req, res, next) => {
       throw new ValidationError('Maximum 500 student records can be imported in a single batch');
     }
 
-    // Pre-load all grades, sections, and academic years for this school
-    const [allGrades, allSections, allAcademicYears] = await Promise.all([
-      Grade.find({ schoolId }).lean(),
-      Section.find({ schoolId }).lean(),
-      AcademicYear.find({ schoolId }).lean(),
-    ]);
-
-    const activeAcademicYear = allAcademicYears.find((y) => y.isCurrent) || allAcademicYears[0];
-
-    const results = {
-      total: students.length,
-      importedCount: 0,
-      skippedCount: 0,
-      importedStudents: [],
-      errors: [],
-    };
-
     // Sanitize string helpers: clean extra spaces
     const sanitizeText = (val) => {
       if (val === undefined || val === null) return '';
@@ -495,6 +478,80 @@ const bulkImportStudents = async (req, res, next) => {
     const sanitizePhone = (val) => {
       if (!val) return '';
       return String(val).replace(/[\s\-\(\)\+]/g, '').trim();
+    };
+
+    // Pre-extract unique admission numbers and guardian phones from batch
+    const customAdmissionNumbers = [];
+    const guardianPhones = [];
+    for (let i = 0; i < students.length; i++) {
+      const raw = students[i];
+      const adm = sanitizeText(raw?.admissionNumber);
+      if (adm) customAdmissionNumbers.push(adm);
+      const gPhone = sanitizePhone(raw?.guardianPhone);
+      if (gPhone) guardianPhones.push(gPhone);
+    }
+    const uniqueCustomAdmissions = Array.from(new Set(customAdmissionNumbers));
+    const uniqueGuardianPhones = Array.from(new Set(guardianPhones));
+
+    // Pre-load all grades, sections, academic years, matching existing admission numbers, and existing active guardians
+    const [allGrades, allSections, allAcademicYears, existingStudentsWithAdmission, existingGuardians] = await Promise.all([
+      Grade.find({ schoolId }).lean(),
+      Section.find({ schoolId }).lean(),
+      AcademicYear.find({ schoolId }).lean(),
+      uniqueCustomAdmissions.length > 0
+        ? Student.find({ schoolId, admissionNumber: { $in: uniqueCustomAdmissions } }, { admissionNumber: 1 }).lean()
+        : [],
+      uniqueGuardianPhones.length > 0
+        ? Guardian.find({ schoolId, phone: { $in: uniqueGuardianPhones }, status: 'ACTIVE' })
+        : [],
+    ]);
+
+    const activeAcademicYear = allAcademicYears.find((y) => y.isCurrent) || allAcademicYears[0];
+
+    // In-memory sets and maps for O(1) lookups
+    const existingAdmissionNumbersSet = new Set(
+      existingStudentsWithAdmission.map((s) => String(s.admissionNumber).trim().toLowerCase())
+    );
+
+    const guardianMap = new Map();
+    for (const g of existingGuardians) {
+      if (g.phone) {
+        guardianMap.set(g.phone, g);
+      }
+    }
+
+    const gradeById = new Map();
+    const gradeByNameOrCode = new Map();
+    for (const g of allGrades) {
+      gradeById.set(String(g._id), g);
+      if (g.name) gradeByNameOrCode.set(g.name.toLowerCase().trim(), g);
+      if (g.code) gradeByNameOrCode.set(g.code.toLowerCase().trim(), g);
+    }
+
+    const sectionById = new Map();
+    const sectionsByGradeAndName = new Map();
+    const sectionsByNameOnly = new Map();
+
+    for (const s of allSections) {
+      const sId = String(s._id);
+      const sName = (s.name || '').toLowerCase().trim();
+      const sGradeId = s.gradeId ? String(s.gradeId) : '';
+
+      sectionById.set(sId, s);
+      if (sGradeId && sName) {
+        sectionsByGradeAndName.set(`${sGradeId}:${sName}`, s);
+      }
+      if (sName && !sectionsByNameOnly.has(sName)) {
+        sectionsByNameOnly.set(sName, s);
+      }
+    }
+
+    const results = {
+      total: students.length,
+      importedCount: 0,
+      skippedCount: 0,
+      importedStudents: [],
+      errors: [],
     };
 
     for (let i = 0; i < students.length; i++) {
@@ -553,10 +610,9 @@ const bulkImportStudents = async (req, res, next) => {
         }
       }
 
-      // Prevent duplicate admission numbers
+      // Prevent duplicate admission numbers (O(1) Set lookup)
       if (customAdmissionNumber) {
-        const existingStudent = await Student.findOne({ schoolId, admissionNumber: customAdmissionNumber });
-        if (existingStudent) {
+        if (existingAdmissionNumbersSet.has(customAdmissionNumber.toLowerCase())) {
           rowErrors.push(`Admission Number "${customAdmissionNumber}" already exists`);
         }
       }
@@ -601,11 +657,16 @@ const bulkImportStudents = async (req, res, next) => {
         status: 'ACTIVE',
       });
 
-      // Create & link guardian if present
+      // Track newly created custom admission number in batch cache
+      if (customAdmissionNumber) {
+        existingAdmissionNumbersSet.add(customAdmissionNumber.toLowerCase());
+      }
+
+      // Create & link guardian if present (O(1) in-memory cached lookup)
       if (guardianName || guardianPhone) {
         let guardian = null;
         if (guardianPhone) {
-          guardian = await Guardian.findOne({ schoolId, phone: guardianPhone, status: 'ACTIVE' });
+          guardian = guardianMap.get(guardianPhone) || null;
         }
         if (!guardian && (guardianName || guardianPhone)) {
           guardian = await Guardian.create({
@@ -618,6 +679,9 @@ const bulkImportStudents = async (req, res, next) => {
             isPrimary: true,
             isEmergencyContact: true,
           });
+          if (guardianPhone) {
+            guardianMap.set(guardianPhone, guardian);
+          }
         }
         if (guardian) {
           await StudentGuardian.create({
@@ -631,7 +695,7 @@ const bulkImportStudents = async (req, res, next) => {
         }
       }
 
-      // Resolve Grade and Section for placement enrollment
+      // Resolve Grade and Section for placement enrollment (O(1) Map lookups)
       let resolvedGradeId = defaultGradeId || null;
       let resolvedSectionId = defaultSectionId || null;
       let resolvedAyId = defaultAcademicYearId || activeAcademicYear?._id || null;
@@ -639,19 +703,21 @@ const bulkImportStudents = async (req, res, next) => {
       // Check if row specifies grade by name or ID
       const rawGrade = sanitizeText(raw.grade || raw.gradeLevel || raw.gradeName || raw.standard);
       if (rawGrade) {
-        const foundGrade = allGrades.find(
-          (g) => String(g._id) === rawGrade || g.name.toLowerCase() === rawGrade.toLowerCase() || g.code?.toLowerCase() === rawGrade.toLowerCase()
-        );
+        const foundGrade = gradeById.get(rawGrade) || gradeByNameOrCode.get(rawGrade.toLowerCase());
         if (foundGrade) resolvedGradeId = foundGrade._id;
       }
 
       // Check if row specifies section by name or ID
       const rawSection = sanitizeText(raw.section || raw.sectionName || raw.classSection);
       if (rawSection) {
-        const foundSection = allSections.find(
-          (s) => (String(s._id) === rawSection || s.name.toLowerCase() === rawSection.toLowerCase()) &&
-                 (!resolvedGradeId || String(s.gradeId) === String(resolvedGradeId))
-        );
+        const rawSectionLower = rawSection.toLowerCase();
+        let foundSection = sectionById.get(rawSection);
+        if (!foundSection && resolvedGradeId) {
+          foundSection = sectionsByGradeAndName.get(`${String(resolvedGradeId)}:${rawSectionLower}`);
+        }
+        if (!foundSection && !resolvedGradeId) {
+          foundSection = sectionsByNameOnly.get(rawSectionLower);
+        }
         if (foundSection) {
           resolvedSectionId = foundSection._id;
           if (!resolvedGradeId) resolvedGradeId = foundSection.gradeId;

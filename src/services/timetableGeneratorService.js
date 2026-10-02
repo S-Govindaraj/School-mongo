@@ -5,12 +5,13 @@ const Section = require('../models/Section');
 const Grade = require('../models/Grade');
 const Subject = require('../models/Subject');
 const GradeSectionPeriodConfig = require('../models/GradeSectionPeriodConfig');
+const SchoolSetting = require('../models/SchoolSetting');
 const { ValidationError } = require('../utils/errors');
 const { logAuditEvent } = require('../middleware/auditLogger');
 const { withTransactionOrFallback } = require('../utils/withTransaction');
 const { TimetableValidatorService } = require('./timetableValidatorService');
 
-const DEFAULT_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'];
+const DEFAULT_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const LAB_TYPES = new Set(['LAB', 'PRACTICAL']);
 const BACKTRACK_BUDGET_PER_VARIABLE = 40;
 const WALL_CLOCK_TIMEOUT_MS = 8000;
@@ -362,7 +363,11 @@ class TimetableGeneratorService {
    */
   static async previewGeneration(schoolId, params) {
     const { academicYearId, campusId, gradeIds = [], sectionIds = [], days, allowDoublePeriods, constraints, regenerateSubjectId } = params;
-    const selectedDays = days?.length ? days : DEFAULT_DAYS;
+    const schoolSetting = await SchoolSetting.findOne({ schoolId }).lean();
+    const workingDaysCountSetting = Number(schoolSetting?.academic?.workingDaysPerWeek) || 6;
+    const ALL_WEEK_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+    const defaultDaysFromSetting = ALL_WEEK_DAYS.slice(0, Math.min(7, Math.max(4, workingDaysCountSetting)));
+    const selectedDays = days?.length ? days : defaultDaysFromSetting;
 
     const sectionFilter = { schoolId, status: { $ne: 'ARCHIVED' } };
     if (sectionIds.length) sectionFilter._id = { $in: sectionIds };
@@ -428,26 +433,39 @@ class TimetableGeneratorService {
 
     if (!regenerateSubjectId) {
       for (const g of gradesInScope) {
-        const configuredPeriods = Array.isArray(g.periods) ? g.periods : [];
-        if (configuredPeriods.length > 0) {
-          const gradeSections = sections.filter((s) => String(s.gradeId) === String(g._id));
-          const requiredCount = configuredPeriods.length * gradeSections.length;
-          const assignedCount = variables
-            .filter((v) => String(v.gradeId) === String(g._id))
-            .reduce((sum, v) => sum + (v.isDouble ? 2 : 1), 0);
+        const gradeSections = sections.filter((s) => String(s.gradeId) === String(g._id));
+        if (gradeSections.length === 0) continue;
 
-          if (assignedCount !== requiredCount) {
-            if (assignedCount < requiredCount) {
-              const diff = requiredCount - assignedCount;
-              throw new ValidationError(
-                `Exact period requirement not satisfied for ${g.name}: ${diff} period(s) are missing (${assignedCount} assigned vs ${requiredCount} required across ${gradeSections.length} section(s)). Please adjust Class Subjects configuration.`
-              );
-            } else {
-              const diff = assignedCount - requiredCount;
-              throw new ValidationError(
-                `Exact period requirement exceeded for ${g.name}: ${assignedCount} assigned periods exceeds the required ${requiredCount} periods by ${diff} period(s) across ${gradeSections.length} section(s). Please adjust Class Subjects configuration.`
-              );
-            }
+        let dailyPeriodCount = Array.isArray(g.periods) && g.periods.length > 0 ? g.periods.length : 0;
+        if (!dailyPeriodCount) {
+          const sampleSec = gradeSections[0];
+          const secPeriods = periodsBySection.get(String(sampleSec._id)) || [];
+          if (secPeriods.length > 0) {
+            dailyPeriodCount = secPeriods.length;
+          } else {
+            dailyPeriodCount = Number(schoolSetting?.academic?.dailyPeriodsCount) || 8;
+          }
+        }
+
+        const workingDaysCount = selectedDays.length;
+        const periodsPerSection = dailyPeriodCount * workingDaysCount;
+        const requiredCount = periodsPerSection * gradeSections.length;
+
+        const assignedCount = variables
+          .filter((v) => String(v.gradeId) === String(g._id))
+          .reduce((sum, v) => sum + (v.isDouble ? 2 : 1), 0);
+
+        if (assignedCount !== requiredCount) {
+          if (assignedCount < requiredCount) {
+            const diff = requiredCount - assignedCount;
+            throw new ValidationError(
+              `Exact period requirement not satisfied for ${g.name}: ${diff} period(s) are missing (${assignedCount} assigned vs ${requiredCount} required [${dailyPeriodCount} periods/day × ${workingDaysCount} days × ${gradeSections.length} section(s) = ${periodsPerSection} periods/section]). Please adjust Class Subjects configuration.`
+            );
+          } else {
+            const diff = assignedCount - requiredCount;
+            throw new ValidationError(
+              `Exact period requirement exceeded for ${g.name}: ${assignedCount} assigned periods exceeds the required ${requiredCount} periods by ${diff} period(s) [${dailyPeriodCount} periods/day × ${workingDaysCount} days × ${gradeSections.length} section(s) = ${periodsPerSection} periods/section]. Please adjust Class Subjects configuration.`
+            );
           }
         }
       }
@@ -539,20 +557,31 @@ class TimetableGeneratorService {
     toReplace.forEach((entry) => ctx.remove(entry));
 
     if (mode !== 'REGENERATE_SUBJECT' && Array.isArray(targetSectionIds) && targetSectionIds.length > 0) {
+      const schoolSetting = await SchoolSetting.findOne({ schoolId }).lean();
+      const defaultDaysCount = Number(schoolSetting?.academic?.workingDaysPerWeek) || 6;
+      const slotDays = new Set((slots || []).map((s) => s.dayOfWeek));
+      const workingDaysCount = slotDays.size > 0 ? slotDays.size : defaultDaysCount;
+
       const targetSecs = targetSectionIds.map((id) => ctx.sections.get(String(id))).filter(Boolean);
       const gradeIds = [...new Set(targetSecs.map((s) => String(s.gradeId)))];
       const gradesInScope = await Grade.find({ _id: { $in: gradeIds }, schoolId }).lean();
       for (const g of gradesInScope) {
-        const configuredPeriods = Array.isArray(g.periods) ? g.periods : [];
-        if (configuredPeriods.length > 0) {
-          const gSecs = targetSecs.filter((s) => String(s.gradeId) === String(g._id));
-          const required = configuredPeriods.length * gSecs.length;
-          const assigned = (slots || []).filter((s) => gSecs.some((sec) => String(sec._id) === String(s.sectionId))).length;
-          if (assigned !== required) {
-            throw new ValidationError(
-              `Cannot save timetable: exact period requirement not satisfied for ${g.name}. Required: ${required}, provided: ${assigned}.`
-            );
-          }
+        const gSecs = targetSecs.filter((s) => String(s.gradeId) === String(g._id));
+        if (gSecs.length === 0) continue;
+
+        let dailyPeriodCount = Array.isArray(g.periods) && g.periods.length > 0 ? g.periods.length : 0;
+        if (!dailyPeriodCount) {
+          const allInstructional = [...ctx.periods.values()].filter((p) => p.status === 'ACTIVE' && (p.type ? p.type === 'INSTRUCTIONAL' : !p.isBreak));
+          dailyPeriodCount = allInstructional.length > 0 ? allInstructional.length : (Number(schoolSetting?.academic?.dailyPeriodsCount) || 8);
+        }
+
+        const periodsPerSection = dailyPeriodCount * workingDaysCount;
+        const required = periodsPerSection * gSecs.length;
+        const assigned = (slots || []).filter((s) => gSecs.some((sec) => String(sec._id) === String(s.sectionId))).length;
+        if (assigned !== required) {
+          throw new ValidationError(
+            `Cannot save timetable: exact period requirement not satisfied for ${g.name}. Required: ${required} (${dailyPeriodCount} periods/day × ${workingDaysCount} days × ${gSecs.length} section(s) = ${periodsPerSection} periods/section), provided: ${assigned}.`
+          );
         }
       }
     }

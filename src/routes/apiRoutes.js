@@ -275,8 +275,8 @@ router.get('/students/:id', requirePermissions('student_view'), staffAccessScope
 router.post('/students', requirePermissions('student_create'), validate(studentSchema), studentController.createStudent);
 router.patch('/students/:id', requirePermissions('student_update'), staffAccessScope, validate(updateStudentSchema), studentController.updateStudent);
 router.patch('/students/:id/status', requirePermissions('student_status_change'), staffAccessScope, validate(studentStatusSchema), studentController.updateStudentStatus);
-router.post('/students/:id/restore', requirePermissions('student_active', 'student_status_change', 'student_archive'), staffAccessScope, studentController.restoreStudent);
-router.delete('/students/:id', requirePermissions('student_inactive', 'student_status_change', 'student_archive'), staffAccessScope, studentController.deleteStudent);
+router.post('/students/:id/restore', requirePermissions('student_active'), staffAccessScope, studentController.restoreStudent);
+router.delete('/students/:id', requirePermissions('student_inactive'), staffAccessScope, studentController.deleteStudent);
 
 // --- Student 360 profile tabs ---
 router.get('/students/:studentId/360/overview', requirePermissions('student_view'), student360Controller.getOverview);

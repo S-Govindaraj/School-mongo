@@ -72,11 +72,21 @@ const login = async (req, res, next) => {
       userAgent: req.headers['user-agent'],
     });
 
+    const rolePayload = {
+      _id: user.roleId?._id,
+      id: user.roleId?._id,
+      name: user.roleId?.name,
+      code: user.roleId?.code,
+      hierarchyLevel: user.roleId?.hierarchyLevel,
+      permissions,
+    };
+
     return successResponse(
       res,
       {
         token,
         user: {
+          _id: user._id,
           id: user._id,
           name: user.name,
           email: user.email,
@@ -84,13 +94,10 @@ const login = async (req, res, next) => {
           status: user.status,
           schoolId: user.schoolId?._id || user.schoolId,
           school: user.schoolId,
-          role: {
-            id: user.roleId?._id,
-            name: user.roleId?.name,
-            code: user.roleId?.code,
-            hierarchyLevel: user.roleId?.hierarchyLevel,
-            permissions,
-          },
+          roleId: rolePayload,
+          role: rolePayload,
+          permissions,
+          directPermissions: user.directPermissions || [],
         },
       },
       'Login successful'
@@ -138,8 +145,17 @@ const getMe = async (req, res, next) => {
     }
 
     const permissions = user.roleId?.permissions || [];
+    const rolePayload = {
+      _id: user.roleId?._id,
+      id: user.roleId?._id,
+      name: user.roleId?.name,
+      code: user.roleId?.code,
+      hierarchyLevel: user.roleId?.hierarchyLevel,
+      permissions,
+    };
 
     return successResponse(res, {
+      _id: user._id,
       id: user._id,
       name: user.name,
       email: user.email,
@@ -148,13 +164,10 @@ const getMe = async (req, res, next) => {
       status: user.status,
       schoolId: user.schoolId?._id || user.schoolId,
       school: user.schoolId,
-      role: {
-        id: user.roleId?._id,
-        name: user.roleId?.name,
-        code: user.roleId?.code,
-        hierarchyLevel: user.roleId?.hierarchyLevel,
-        permissions,
-      },
+      roleId: rolePayload,
+      role: rolePayload,
+      permissions,
+      directPermissions: user.directPermissions || [],
     });
   } catch (error) {
     next(error);

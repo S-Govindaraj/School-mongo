@@ -465,13 +465,24 @@ const bulkImportAcademicTerms = async (req, res, next) => {
       throw new ValidationError('A non-empty "academicTerms" array is required.');
     }
 
-    const academicYears = await AcademicYear.find({ schoolId }).lean();
+    const [academicYears, existingTerms] = await Promise.all([
+      AcademicYear.find({ schoolId }).lean(),
+      AcademicTerm.find({ schoolId }),
+    ]);
+
     const yearMap = new Map();
     academicYears.forEach((y) => {
       yearMap.set(y._id.toString(), y);
       yearMap.set(y.code.toLowerCase().trim(), y);
       yearMap.set(y.name.toLowerCase().trim(), y);
     });
+
+    const termMap = new Map();
+    for (const t of existingTerms) {
+      if (t.academicYearId && t.code) {
+        termMap.set(`${t.academicYearId.toString()}:${t.code.toUpperCase().trim()}`, t);
+      }
+    }
 
     const results = {
       total: termRecords.length,
@@ -549,11 +560,9 @@ const bulkImportAcademicTerms = async (req, res, next) => {
         continue;
       }
 
-      let term = await AcademicTerm.findOne({
-        schoolId,
-        academicYearId: matchedYear._id,
-        code: rawCode,
-      });
+      // Check existing term via in-memory Map (O(1))
+      const termKey = `${matchedYear._id.toString()}:${rawCode}`;
+      let term = termMap.get(termKey) || null;
 
       if (term) {
         term.name = rawName;
@@ -575,6 +584,7 @@ const bulkImportAcademicTerms = async (req, res, next) => {
           isCurrent,
           status,
         });
+        termMap.set(termKey, term);
       }
 
       results.importedCount++;

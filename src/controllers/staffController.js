@@ -526,12 +526,26 @@ const bulkImportStaff = async (req, res, next) => {
       throw new ValidationError('A non-empty "staff" array is required.');
     }
 
-    // Pre-fetch roles, departments, designations
-    const [teacherRole, staffRole, departments, designations] = await Promise.all([
+    // Pre-extract unique candidate emails from batch
+    const candidateEmails = Array.from(
+      new Set(
+        staffRecords
+          .map((row) => {
+            const rawEmpId = String(row.employeeId || '').trim().toUpperCase();
+            return String(row.email || (rawEmpId ? `${rawEmpId.toLowerCase()}@school.internal` : '')).toLowerCase().trim();
+          })
+          .filter(Boolean)
+      )
+    );
+
+    // Pre-fetch roles, departments, designations, existing staff, and existing users
+    const [teacherRole, staffRole, departments, designations, existingStaffList, existingUsers] = await Promise.all([
       Role.findOne({ code: 'TEACHER' }).lean(),
       Role.findOne({ code: 'STAFF' }).lean(),
       Department.find({ schoolId }).lean(),
       Designation.find({ schoolId }).lean(),
+      Staff.find({ schoolId }),
+      candidateEmails.length > 0 ? User.find({ email: { $in: candidateEmails } }) : [],
     ]);
 
     const deptMap = new Map();
@@ -545,6 +559,16 @@ const bulkImportStaff = async (req, res, next) => {
       desigMap.set(d.name.toLowerCase().trim(), d);
       if (d.code) desigMap.set(d.code.toLowerCase().trim(), d);
     });
+
+    const staffMap = new Map();
+    for (const s of existingStaffList) {
+      if (s.employeeId) staffMap.set(s.employeeId.toUpperCase().trim(), s);
+    }
+
+    const userMap = new Map();
+    for (const u of existingUsers) {
+      if (u.email) userMap.set(u.email.toLowerCase().trim(), u);
+    }
 
     const results = {
       total: staffRecords.length,
@@ -610,13 +634,9 @@ const bulkImportStaff = async (req, res, next) => {
         continue;
       }
 
-      // Check existing staff
-      let staff = await Staff.findOne({ schoolId, employeeId: rawEmpId });
-      let user = null;
-
-      if (email) {
-        user = await User.findOne({ email });
-      }
+      // Check existing staff and user from in-memory cache (O(1))
+      let staff = staffMap.get(rawEmpId) || null;
+      let user = email ? userMap.get(email) || null : null;
 
       const targetRole = isTeaching ? teacherRole : staffRole;
       const roleId = targetRole?._id || null;
@@ -631,11 +651,13 @@ const bulkImportStaff = async (req, res, next) => {
           phone: phone || '',
           status: 'ACTIVE',
         });
+        if (user.email) userMap.set(user.email.toLowerCase().trim(), user);
       } else {
         if (roleId && !user.roleId) user.roleId = roleId;
         if (rawFullName) user.name = rawFullName;
         if (phone && !user.phone) user.phone = phone;
         await user.save();
+        if (user.email) userMap.set(user.email.toLowerCase().trim(), user);
       }
 
       if (staff) {
@@ -671,6 +693,7 @@ const bulkImportStaff = async (req, res, next) => {
           isTeachingStaff: isTeaching,
           status,
         });
+        staffMap.set(rawEmpId, staff);
       }
 
       results.importedCount++;

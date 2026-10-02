@@ -540,10 +540,11 @@ const bulkImportSections = async (req, res, next) => {
       throw new ValidationError('A non-empty "sections" array is required.');
     }
 
-    const [grades, staffMembers, rooms] = await Promise.all([
+    const [grades, staffMembers, rooms, existingSections] = await Promise.all([
       Grade.find({ schoolId }).lean(),
       Staff.find({ schoolId }).lean(),
       Room.find({ schoolId }).lean(),
+      Section.find({ schoolId }),
     ]);
 
     const gradeMap = new Map();
@@ -567,6 +568,13 @@ const bulkImportSections = async (req, res, next) => {
       if (r.name) roomMap.set(r.name.toLowerCase().trim(), r);
       if (r.roomNumber) roomMap.set(r.roomNumber.toLowerCase().trim(), r);
     });
+
+    const sectionMap = new Map();
+    for (const s of existingSections) {
+      if (s.gradeId && s.code) {
+        sectionMap.set(`${s.gradeId.toString()}:${s.code.toUpperCase().trim()}`, s);
+      }
+    }
 
     const results = {
       total: sectionRecords.length,
@@ -629,11 +637,9 @@ const bulkImportSections = async (req, res, next) => {
         continue;
       }
 
-      let section = await Section.findOne({
-        schoolId,
-        gradeId: matchedGrade._id,
-        code: rawCode,
-      });
+      // Check existing section via in-memory Map (O(1))
+      const sectionKey = `${matchedGrade._id.toString()}:${rawCode}`;
+      let section = sectionMap.get(sectionKey) || null;
 
       if (section) {
         section.name = rawName;
@@ -655,6 +661,7 @@ const bulkImportSections = async (req, res, next) => {
           classTeacherId: matchedStaff?._id || null,
           status,
         });
+        sectionMap.set(sectionKey, section);
       }
 
       results.importedCount++;

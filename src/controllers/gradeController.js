@@ -362,6 +362,12 @@ const bulkImportGrades = async (req, res, next) => {
       throw new ValidationError('A non-empty "grades" array is required.');
     }
 
+    const existingGrades = await Grade.find({ schoolId });
+    const gradeMap = new Map();
+    for (const g of existingGrades) {
+      if (g.code) gradeMap.set(g.code.toUpperCase().trim(), g);
+    }
+
     const results = {
       total: gradeRecords.length,
       importedCount: 0,
@@ -407,7 +413,8 @@ const bulkImportGrades = async (req, res, next) => {
         continue;
       }
 
-      let grade = await Grade.findOne({ schoolId, code: rawCode });
+      // Check existing grade via in-memory Map (O(1))
+      let grade = gradeMap.get(rawCode) || null;
 
       if (grade) {
         grade.name = rawName;
@@ -424,6 +431,7 @@ const bulkImportGrades = async (req, res, next) => {
           sequenceOrder,
           status,
         });
+        gradeMap.set(rawCode, grade);
       }
 
       results.importedCount++;

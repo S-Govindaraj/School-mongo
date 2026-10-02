@@ -485,6 +485,12 @@ const bulkImportAcademicYears = async (req, res, next) => {
       throw new ValidationError('A non-empty "academicYears" array is required.');
     }
 
+    const existingAcademicYears = await AcademicYear.find({ schoolId });
+    const yearMap = new Map();
+    for (const y of existingAcademicYears) {
+      if (y.code) yearMap.set(y.code.trim(), y);
+    }
+
     const results = {
       total: yearRecords.length,
       importedCount: 0,
@@ -560,13 +566,17 @@ const bulkImportAcademicYears = async (req, res, next) => {
         continue;
       }
 
-      let year = await AcademicYear.findOne({ schoolId, code: canonicalCode });
+      // Check existing academic year via in-memory Map (O(1))
+      let year = yearMap.get(canonicalCode) || null;
 
       if (isCurrent) {
         await AcademicYear.updateMany(
           { schoolId, code: { $ne: canonicalCode } },
           { $set: { isCurrent: false } }
         );
+        for (const [codeKey, existingY] of yearMap.entries()) {
+          if (codeKey !== canonicalCode) existingY.isCurrent = false;
+        }
       }
 
       if (year) {
@@ -586,6 +596,7 @@ const bulkImportAcademicYears = async (req, res, next) => {
           isCurrent,
           status,
         });
+        yearMap.set(canonicalCode, year);
       }
 
       results.importedCount++;

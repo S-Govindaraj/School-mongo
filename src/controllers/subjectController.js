@@ -257,6 +257,12 @@ const bulkImportSubjects = async (req, res, next) => {
 
     const validTypes = ['CORE', 'ELECTIVE', 'LANGUAGE', 'PRACTICAL', 'OTHER', 'LAB', 'ACTIVITY'];
 
+    const existingSubjects = await Subject.find({ schoolId });
+    const subjectMap = new Map();
+    for (const s of existingSubjects) {
+      if (s.code) subjectMap.set(s.code.toUpperCase().trim(), s);
+    }
+
     const results = {
       total: subjectRecords.length,
       importedCount: 0,
@@ -305,7 +311,8 @@ const bulkImportSubjects = async (req, res, next) => {
         continue;
       }
 
-      let subject = await Subject.findOne({ schoolId, code: rawCode });
+      // Check existing subject via in-memory Map (O(1))
+      let subject = subjectMap.get(rawCode) || null;
 
       if (subject) {
         subject.name = rawName;
@@ -324,6 +331,7 @@ const bulkImportSubjects = async (req, res, next) => {
           description,
           status,
         });
+        subjectMap.set(rawCode, subject);
       }
 
       results.importedCount++;

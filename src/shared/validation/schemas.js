@@ -330,7 +330,7 @@ const timetableGeneratePreviewSchema = z.object({
   sectionIds: z.array(z.string()).optional(),
   days: z.array(z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']))
     .min(1, 'Select at least one working day')
-    .default(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']),
+    .default(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']),
   allowDoublePeriods: z.boolean().default(true),
   constraints: timetableGenerateConstraintsSchema,
   // Mode 3/4 (regenerate): when set, generation is confined to this one

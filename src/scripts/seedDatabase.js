@@ -64,6 +64,8 @@ const permissionsData = [
   { id: 'student_view', module: 'Student Management', action: 'view', code: 'student_view', name: 'View Students', description: 'View student master directory and 360 profiles' },
   { id: 'student_create', module: 'Student Management', action: 'create', code: 'student_create', name: 'Create Students', description: 'Create and register student profiles' },
   { id: 'student_update', module: 'Student Management', action: 'update', code: 'student_update', name: 'Update Students', description: 'Update student profiles and status' },
+  { id: 'student_active', module: 'Student Management', action: 'active', code: 'student_active', name: 'Activate Student', description: 'Activate student profile and records' },
+  { id: 'student_inactive', module: 'Student Management', action: 'inactive', code: 'student_inactive', name: 'Deactivate Student', description: 'Deactivate student profile and records' },
   { id: 'student_archive', module: 'Student Management', action: 'archive', code: 'student_archive', name: 'Archive Students', description: 'Archive student records' },
   { id: 'student_status_change', module: 'Student Management', action: 'status_change', code: 'student_status_change', name: 'Change Student Status', description: 'Change a student\'s lifecycle status (active/inactive/withdrawn/etc.)' },
   { id: 'student_import', module: 'Student Management', action: 'import', code: 'student_import', name: 'Bulk Import Students', description: 'Bulk import students from Excel spreadsheets with validation and preview' },

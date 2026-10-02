@@ -314,6 +314,48 @@ const bulkImportGuardians = async (req, res, next) => {
       return String(val).replace(/[\s\-\(\)\+]/g, '').trim();
     };
 
+    const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Pre-extract unique phone numbers and student identifiers from batch
+    const phones = [];
+    const studentIdentifiers = [];
+    for (let i = 0; i < guardians.length; i++) {
+      const raw = guardians[i];
+      const p = sanitizePhone(raw.phone || raw.mobileNumber || raw.mobile);
+      if (p) phones.push(p);
+      const sn = sanitizeText(raw.studentNumber || raw.studentId || raw.admissionNumber || raw.wardId);
+      if (sn) studentIdentifiers.push(sn);
+    }
+
+    const uniquePhones = Array.from(new Set(phones));
+    const uniqueStudentIdentifiers = Array.from(new Set(studentIdentifiers));
+
+    // Preload existing guardians and students in parallel
+    const [existingGuardians, matchedStudents] = await Promise.all([
+      uniquePhones.length > 0 ? Guardian.find({ schoolId, phone: { $in: uniquePhones } }) : [],
+      uniqueStudentIdentifiers.length > 0
+        ? Student.find({
+            schoolId,
+            $or: [
+              { studentNumber: { $in: uniqueStudentIdentifiers.map((s) => new RegExp(`^${escapeRegex(s)}$`, 'i')) } },
+              { admissionNumber: { $in: uniqueStudentIdentifiers.map((s) => new RegExp(`^${escapeRegex(s)}$`, 'i')) } },
+            ],
+          })
+        : [],
+    ]);
+
+    // Build Maps for O(1) lookups
+    const guardianMap = new Map();
+    for (const g of existingGuardians) {
+      if (g.phone) guardianMap.set(g.phone, g);
+    }
+
+    const studentMap = new Map();
+    for (const s of matchedStudents) {
+      if (s.studentNumber) studentMap.set(s.studentNumber.toLowerCase().trim(), s);
+      if (s.admissionNumber) studentMap.set(s.admissionNumber.toLowerCase().trim(), s);
+    }
+
     for (let i = 0; i < guardians.length; i++) {
       const raw = guardians[i];
       const rowNum = i + 1;
@@ -369,16 +411,10 @@ const bulkImportGuardians = async (req, res, next) => {
         rowErrors.push('Invalid email address format');
       }
 
-      // Resolve linked student (e.g. STU-2026-00335)
+      // Resolve linked student (e.g. STU-2026-00335) from in-memory map
       let student = null;
       if (rawStudentNumber) {
-        student = await Student.findOne({
-          schoolId,
-          $or: [
-            { studentNumber: { $regex: new RegExp(`^${rawStudentNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
-            { admissionNumber: { $regex: new RegExp(`^${rawStudentNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
-          ],
-        });
+        student = studentMap.get(rawStudentNumber.toLowerCase().trim()) || null;
 
         if (!student) {
           rowErrors.push(`Student with ID / Admission Number "${rawStudentNumber}" not found in system`);
@@ -395,8 +431,8 @@ const bulkImportGuardians = async (req, res, next) => {
         continue;
       }
 
-      // Upsert Guardian by schoolId and phone
-      let guardian = await Guardian.findOne({ schoolId, phone });
+      // Upsert Guardian by schoolId and phone via in-memory map cache (O(1))
+      let guardian = guardianMap.get(phone) || null;
       if (guardian) {
         guardian.name = name;
         guardian.relationship = relationship;
@@ -420,6 +456,7 @@ const bulkImportGuardians = async (req, res, next) => {
           isEmergencyContact,
           status: 'ACTIVE',
         });
+        guardianMap.set(phone, guardian);
       }
 
       // If student was resolved, connect parent and student via StudentGuardian
